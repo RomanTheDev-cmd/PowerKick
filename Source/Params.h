@@ -30,6 +30,8 @@ namespace id
     inline constexpr const char* rumbleSync = "rumbleSync";
     inline constexpr const char* velSens    = "velSens";
     inline constexpr const char* keyTrack   = "keyTrack";
+    inline constexpr const char* bodyTone   = "bodyTone";
+    inline constexpr const char* pitchFall  = "pitchFall";
 }
 
 enum class DriveMode { saturate, clip, industrial };
@@ -61,6 +63,8 @@ struct KickParams
     int rumbleSync = 0;         // 0 = 1/16, 1 = 1/8, 2 = 3/16
     float velSens = 0.6f;       // 0..1
     bool keyTrack = false;
+    float pitchFall = 0.0f;     // 0..24 st: slow pitch fall through the tail (measured kicks fall 2-4 st at 100-250 ms)
+    float bodyTone = 1.0f;      // 0..1: mid scoop of the body after the attack (0 = -24 dB at ~1 kHz, 1 = none)
 };
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

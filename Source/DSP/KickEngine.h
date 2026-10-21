@@ -23,11 +23,15 @@ public:
         f0 = baseFrequency (p.tune) * std::pow (2.0, keyOffset / 12.0);
         depth = p.pitchDepth * (0.55 + 0.45 * p.punch);
         pitchTau = std::max (0.002, p.pitchTime * 0.001);
+        fall = p.pitchFall;
+        fallTau = juce::jlimit (0.03, 0.2, 0.25 * decayMs (p.decay) * 0.001);
         punch = p.punch;
         body = p.body;
         decaySec = decayMs (p.decay) * 0.001;
         hold = decaySec * (0.06 + 0.54 * body);
-        curve = 1.3 + 2.7 * (1.0 - body);
+        // High BODY holds the level and then stops, like measured hard-techno kicks
+        // (tail only 1-2 dB under the hit); low BODY decays smoothly.
+        curve = 0.35 + 3.65 * std::pow (1.0 - body, 1.4);
         satGain = 1.0 + 2.4 * body;
         satNorm = 1.0 / std::tanh (satGain);
 
@@ -73,7 +77,10 @@ public:
         if (! active)
             return;
 
-        const double sweep = depth * std::exp (-t / pitchTau) + punch * 14.0 * std::exp (-t / 0.004);
+        // Fast sweep, the punch blip, and a slow fall through the tail (time constant 25% of
+        // DECAY, 30..200 ms), all ending on TUNE.
+        const double sweep = depth * std::exp (-t / pitchTau) + punch * 14.0 * std::exp (-t / 0.004)
+                             + fall * std::exp (-t / fallTau);
         const double freq = std::min (f0 * std::exp2 (sweep / 12.0), sr * 0.45);
         phase += freq / sr;
         phase -= std::floor (phase);
@@ -87,7 +94,7 @@ public:
             const double u = (t - hold) / (decaySec - hold);
             a = u >= 1.0 ? 0.0 : std::pow (1.0 - u, curve);
         }
-        const double attack = std::min (1.0, t / 0.0004);
+        const double attack = std::min (1.0, t / 0.0004) * std::min (1.0, (decaySec - t) / 0.004); // 4 ms end fade
         const double transient = 1.0 + punch * 0.9 * std::exp (-t / 0.016);
         a *= attack * fade;
         env = a;
@@ -136,7 +143,7 @@ private:
     }
 
     double sr = 48000.0, t = 0.0, phase = 0.0;
-    double f0 = 43.65, depth = 30.0, pitchTau = 0.03, punch = 0.5, body = 0.5;
+    double f0 = 43.65, depth = 30.0, pitchTau = 0.03, fall = 0.0, fallTau = 0.1, punch = 0.5, body = 0.5;
     double decaySec = 0.4, hold = 0.05, curve = 2.0, satGain = 2.0, satNorm = 1.0, velGain = 1.0;
     ClickType clickType = ClickType::sharp;
     double clickTone = 0.5, clickGain = 0.0, clickTau = 0.002, blipFreq = 1000.0;
@@ -326,6 +333,8 @@ public:
     {
         sr = sampleRate;
         xoLow.set (120.0, sr);
+        sideHp1.highpass (150.0, std::sqrt (0.5), sr);
+        sideHp2.highpass (150.0, std::sqrt (0.5), sr);
         xoHigh.set (1000.0, sr);
         static constexpr double apMs[3] = { 1.31, 2.87, 4.73 };
         for (int i = 0; i < 3; ++i)
@@ -340,6 +349,7 @@ public:
     void reset()
     {
         xoLow.reset(); xoHigh.reset();
+        sideHp1.reset(); sideHp2.reset();
         for (auto& a : ap) a.reset();
         haas.reset();
         width.reset (targetWidth);
@@ -377,7 +387,8 @@ public:
         const double w = width.next();
         const double dl = delay.next();
         const double theta = w * 0.62;
-        const double side = std::sin (theta) * haas.read (dl);
+        // Extra high-pass on the side only (mono sum unaffected): no sub in the stereo field.
+        const double side = std::sin (theta) * sideHp2.tick (sideHp1.tick (haas.read (dl)));
         const double centre = sub + body + std::cos (theta) * high;
         l = centre + side;
         r = centre - side;
@@ -387,6 +398,7 @@ private:
     double sr = 48000.0, targetWidth = 0.0, targetDelay = 0.0;
     double apLen[3] {};
     LR4 xoLow, xoHigh;
+    Biquad sideHp1, sideHp2;
     DelayLine ap[3], haas;
     Ramp width, delay;
 };
@@ -410,6 +422,8 @@ public:
         dc.set (12.0, sr);
         mono.setSize (1, blockSize);
         clean.assign ((size_t) blockSize, 0.0);
+        noteTime.assign ((size_t) blockSize, 1.0e9);
+        bodyToneCoef = std::exp (-1.0 / (0.02 * sr));
         oversampler = std::make_unique<juce::dsp::Oversampling<float>> (
             1, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
         oversampler->initProcessing ((size_t) blockSize);
@@ -426,15 +440,19 @@ public:
         dc.reset();
         scoop.reset();
         scoopDb = 0.0;
+        bodyScoop.reset();
+        bodyScoopDb = 0.0;
+        sinceNote = 1.0e9;
         scoopCountdown = 0;
         if (oversampler) oversampler->reset();
         firstBlock = true;
     }
 
-    int getLatencySamples() const { return oversampler ? (int) std::lround (oversampler->getLatencyInSamples()) : 0; }
+    int getLatencySamples() const { return osLatency(); }
 
     void noteOn (const KickParams& p, int note, float velocity)
     {
+        sinceNote = 0.0;
         for (auto& v : voices) v.release();
         // Prefer a free slot; otherwise steal the older (already fading) one.
         auto& v = ! voices[next].isActive() ? voices[next] : voices[1 - next];
@@ -474,6 +492,7 @@ private:
         {
             driveGain.reset (dbToGain (driveDb));
             outGain.reset (dbToGain (p.outputDb));
+            bodyToneSm = p.bodyTone;
             firstBlock = false;
         }
         driveGain.setTarget (dbToGain (driveDb), ramp);
@@ -500,6 +519,8 @@ private:
                 bodySum += b; clickSum += c; envSum += e;
             }
             const double x = bodySum + clickSum + rumble.tick (bodySum, envSum);
+            noteTime[(size_t) i] = sinceNote;
+            sinceNote += 1.0 / sr;
             clean[(size_t) i] = x;
             m[i] = (float) x;
         }
@@ -522,7 +543,7 @@ private:
         const double scoopTarget = -14.0 * p.drive;
 
         // 3. Sub protection, Character EQ, output, stereo.
-        const int lat = getLatencySamples();
+        const int lat = osLatency();
         for (int i = 0; i < len; ++i)
         {
             // Align the clean path with the oversampler's integer latency.
@@ -537,6 +558,21 @@ private:
                 scoop.peak (480.0, 0.6, scoopDb, sr);
             }
             subXoDriven.split (scoop.tick (m[i] * norm), dLow, dHigh);
+            // BODY TONE: measured hard-techno kicks have a bright, distorted attack and a body
+            // with strong lows, scooped mids (~1 kHz) and some top "fizz". After the first 4 ms
+            // a wide mid scoop deepens towards the body tone (0 = -24 dB, 1 = no scoop).
+            bodyToneSm = p.bodyTone + bodyToneCoef * (bodyToneSm - p.bodyTone);
+            {
+                const double tn = noteTime[(size_t) i];
+                const double open = tn < 0.004 ? 1.0 : std::exp (-(tn - 0.004) / 0.012);
+                const double depth = -24.0 * (1.0 - bodyToneSm) * (1.0 - open);
+                if (std::abs (depth - bodyScoopDb) > 0.05)
+                {
+                    bodyScoopDb = depth;
+                    bodyScoop.peak (1000.0, 0.9, bodyScoopDb, sr);
+                }
+                dHigh = bodyScoop.tick (dHigh);
+            }
             subXoClean.split (cleanAligned, cLow, cHigh);
             const double protect = 0.75 * std::sqrt (p.drive);
             double y = dHigh + dLow + (cLow - dLow) * protect;
@@ -547,8 +583,11 @@ private:
             double l, r;
             stereo.tick (y, l, r);
             if (monoCheck) l = r = 0.5 * (l + r);
-            outL[i] = (float) safety (l);
-            outR[i] = (float) safety (r);
+            // Linked emergency ceiling: one gain for both channels, never a side signal.
+            const double pk = std::max (std::abs (l), std::abs (r));
+            const double lim = pk > 0.9 ? safety (pk) / pk : 1.0;
+            outL[i] = (float) (l * lim);
+            outR[i] = (float) (r * lim);
         }
     }
 
@@ -587,7 +626,9 @@ public:
     }
 
 private:
-    // Transparent below -0.9 dBFS, smoothly limits to just under full scale above.
+    int osLatency() const { return oversampler ? (int) std::lround (oversampler->getLatencyInSamples()) : 0; }
+
+    // Emergency ceiling only: presets keep their peaks below it, so it never shapes the sound.
     static double safety (double x) noexcept
     {
         const double a = std::abs (x);
@@ -607,6 +648,10 @@ private:
     DcBlock dc;
     Biquad scoop;
     double scoopDb = 0.0;
+    Biquad bodyScoop;
+    double bodyScoopDb = 0.0;
+    double bodyToneSm = 1.0, bodyToneCoef = 0.999, sinceNote = 1.0e9;
+    std::vector<double> noteTime;
     int scoopCountdown = 0;
     Ramp driveGain, outGain;
     DelayLine cleanDelay = makeDelay();

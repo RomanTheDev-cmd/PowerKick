@@ -46,58 +46,63 @@ const juce::StringArray& allParamIds()
                                          id::character, id::rumble, id::output, id::width, id::delay,
                                          id::driveMode, id::charMode, id::pitchDepth, id::pitchTime,
                                          id::clickType, id::clickTone, id::rumbleTime, id::rumbleSync,
-                                         id::velSens, id::keyTrack };
+                                         id::velSens, id::keyTrack, id::bodyTone, id::pitchFall };
     return ids;
 }
 
+// Parameter defaults equal the default preset "Hard Techno Core", so a fresh instance and every
+// double-click reset give the same fitted, full kick.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
     layout.add (std::make_unique<APF> (juce::ParameterID { id::tune, 1 }, "Tune",
-                                       juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), 0.0f,
+                                       juce::NormalisableRange<float> (-12.0f, 12.0f, 0.01f), -0.7f,
                                        Attr().withStringFromValueFunction ([] (float v, int) { return noteNameForTune (v); })));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::decay, 1 }, "Decay",
-                                       juce::NormalisableRange<float> (0.0f, 1.0f), 0.45f,
+                                       juce::NormalisableRange<float> (0.0f, 1.0f), 0.421f,
                                        Attr().withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (juce::roundToInt (decayMs (v))) + " ms"; })));
-    layout.add (unit (id::punch, "Punch", 0.6f));
-    layout.add (unit (id::body, "Body", 0.5f));
-    layout.add (unit (id::click, "Click", 0.35f));
-    layout.add (unit (id::drive, "Drive", 0.3f));
-    layout.add (unit (id::character, "Character", 0.5f));
+    layout.add (unit (id::punch, "Punch", 0.471f));
+    layout.add (unit (id::body, "Body", 0.742f));
+    layout.add (unit (id::click, "Click", 0.141f));
+    layout.add (unit (id::drive, "Drive", 0.599f));
+    layout.add (unit (id::character, "Character", 0.3f));
     layout.add (unit (id::rumble, "Rumble", 0.0f));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::output, 1 }, "Output",
-                                       juce::NormalisableRange<float> (-24.0f, 6.0f, 0.1f), -3.0f,
+                                       juce::NormalisableRange<float> (-24.0f, 6.0f, 0.1f), -2.5f,
                                        Attr().withLabel ("dB").withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (v, 1) + " dB"; })));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::width, 1 }, "Stereo Width",
-                                       juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 0.0f,
+                                       juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 40.0f,
                                        Attr().withLabel ("%").withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (juce::roundToInt (v)) + " %"; })));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::delay, 1 }, "Stereo Delay",
-                                       juce::NormalisableRange<float> (0.0f, 15.0f, 0.01f, 0.6f), 0.0f,
+                                       juce::NormalisableRange<float> (0.0f, 15.0f, 0.01f, 0.6f), 3.0f,
                                        Attr().withLabel ("ms").withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (v, 2) + " ms"; })));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::driveMode, 1 }, "Drive Mode",
-                                       juce::StringArray { "Saturate", "Clip", "Industrial" }, 0));
+                                       juce::StringArray { "Saturate", "Clip", "Industrial" }, 1));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::charMode, 1 }, "Character Mode",
                                        juce::StringArray { "Deep", "Punchy", "Dark", "Hard", "Raw" }, 1));
 
     layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchDepth, 1 }, "Pitch Depth",
-                                       juce::NormalisableRange<float> (0.0f, 48.0f, 0.1f), 30.0f,
+                                       juce::NormalisableRange<float> (0.0f, 48.0f, 0.1f), 39.8f,
                                        Attr().withLabel ("st")));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchTime, 1 }, "Pitch Time",
-                                       juce::NormalisableRange<float> (4.0f, 150.0f, 0.1f, 0.5f), 30.0f,
+                                       juce::NormalisableRange<float> (4.0f, 150.0f, 0.1f, 0.5f), 54.7f,
                                        Attr().withLabel ("ms")));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::clickType, 1 }, "Click Type",
-                                       juce::StringArray { "Soft", "Sharp", "Metal" }, 1));
-    layout.add (unit (id::clickTone, "Click Tone", 0.5f));
+                                       juce::StringArray { "Soft", "Sharp", "Metal" }, 2));
+    layout.add (unit (id::clickTone, "Click Tone", 1.0f));
     layout.add (unit (id::rumbleTime, "Rumble Time", 0.5f));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::rumbleSync, 1 }, "Rumble Sync",
                                        juce::StringArray { "1/16", "1/8", "3/16" }, 0));
     layout.add (unit (id::velSens, "Velocity Sens", 0.6f));
     layout.add (std::make_unique<APB> (juce::ParameterID { id::keyTrack, 1 }, "Key Track", false));
+    layout.add (unit (id::bodyTone, "Body Tone", 0.5f));
+    layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchFall, 1 }, "Pitch Fall",
+                                       juce::NormalisableRange<float> (0.0f, 24.0f, 0.01f), 1.4f, Attr().withLabel ("st")));
     return layout;
 }
 
@@ -126,6 +131,8 @@ KickParams readParams (const juce::AudioProcessorValueTreeState& s)
     p.rumbleSync = juce::roundToInt (v (id::rumbleSync));
     p.velSens = v (id::velSens);
     p.keyTrack = v (id::keyTrack) > 0.5f;
+    p.bodyTone = v (id::bodyTone);
+    p.pitchFall = v (id::pitchFall);
     return p;
 }
 }
