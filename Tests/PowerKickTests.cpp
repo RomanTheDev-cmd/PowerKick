@@ -4,7 +4,9 @@
 #include "DSP/KickEngine.h"
 #include "KickRenderer.h"
 #include "Presets.h"
+#include <cstdio>
 #include <iostream>
+#include <sstream>
 
 using namespace pk;
 
@@ -51,6 +53,22 @@ double rmsOf (const std::vector<float>& v)
 double db (double g) { return 20.0 * std::log10 (std::max (g, 1.0e-12)); }
 
 // Energy of x in [f1, f2] via a 4th-order band filter (two LR4 splits).
+// 48 dB/oct edges: for "is there sub in the side signal", where wide highs would leak
+// through a 24 dB/oct measuring filter.
+double bandRmsSteep (const float* x, int n, double sr, double f1, double f2)
+{
+    dsp::LR4 lo1, lo2, hi1, hi2;
+    lo1.set (f1, sr); lo2.set (f1, sr); hi1.set (f2, sr); hi2.set (f2, sr);
+    double sum = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        double a, b, c, d, e, g, h, k;
+        lo1.split (x[i], a, b); lo2.split (b, c, d); hi1.split (d, e, g); hi2.split (e, h, k);
+        sum += h * h;
+    }
+    return std::sqrt (sum / std::max (1, n));
+}
+
 double bandRms (const float* x, int n, double sr, double f1, double f2)
 {
     dsp::LR4 lo, hi;
@@ -125,7 +143,7 @@ void testPresetsRender (bool report)
             side[(size_t) i] = 0.5f * (audio.getSample (0, i) - audio.getSample (1, i));
         }
         const double subMid = bandRms (mid.data(), n, 48000.0, 20.0, 100.0);
-        const double subSide = bandRms (side.data(), n, 48000.0, 20.0, 100.0);
+        const double subSide = bandRmsSteep (side.data(), n, 48000.0, 20.0, 100.0);
         expect (db (subSide) - db (subMid) < -50.0, pr.name + ": sub stays mono (" + juce::String (db (subSide) - db (subMid), 1) + " dB)");
         if (report)
         {
@@ -192,13 +210,13 @@ void testSampleRatesAndBlocks()
     for (double sr : { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 })
         for (int block : { 16, 64, 173, 512, 2048 })
         {
-            const auto a = stream (preset ("Concrete Hammer"), sr, block);
+            const auto a = stream (preset ("Schranz Metal"), sr, block);
             const auto s = stats (a);
             expect (s.finite && s.peak <= 1.0 && s.peak > 0.25,
                     "sr " + juce::String (sr) + " block " + juce::String (block) + " peak " + juce::String (db (s.peak), 2));
         }
     // Same sound regardless of host buffer size.
-    const auto a = stream (preset ("Hard Floor"), 48000.0, 64), b = stream (preset ("Hard Floor"), 48000.0, 512);
+    const auto a = stream (preset ("Hard Techno Core"), 48000.0, 64), b = stream (preset ("Hard Techno Core"), 48000.0, 512);
     double diff = 0;
     for (int i = 0; i < a.getNumSamples(); ++i) diff = std::max (diff, (double) std::abs (a.getSample (0, i) - b.getSample (0, i)));
     expect (diff < 0.02, "buffer-size independent output (max diff " + juce::String (diff, 5) + ")");
@@ -215,7 +233,7 @@ double maxStep (const juce::AudioBuffer<float>& a, int ch, int from, int to)
 void testNoClicksOnParameterJumps()
 {
     // Long low kick (smooth waveform); jump stereo, output, drive and character mid-tail.
-    auto p = preset ("Long Sub Techno");
+    auto p = preset ("Deep Drop");
     p.click = 0.0f;
     const double sr = 48000.0;
     dsp::KickEngine e;
@@ -239,7 +257,7 @@ void testNoClicksOnParameterJumps()
     expect (at < std::max (before, after) * 1.5 + 0.002, "no click on parameter jump (step " + juce::String (at, 4) + " vs " + juce::String (std::max (before, after), 4) + ")");
 
     // Retrigger in the middle of a loud hit: no discontinuity beyond normal waveform steps.
-    auto q = preset ("Long Sub Techno");
+    auto q = preset ("Deep Drop");
     q.click = 0.0f;
     dsp::KickEngine e2;
     e2.prepare (sr, 256);
@@ -258,7 +276,7 @@ void testNoClicksOnParameterJumps()
 void testCharacterAudible()
 {
     // Each mode at full CHARACTER must move the spectrum clearly (> 2 dB in some band) vs. CHARACTER 0.
-    auto base = preset ("Warehouse Punch");
+    auto base = preset ("Classic Punch");
     base.character = 0.0f;
     const auto ref = renderKick (base, 48000.0, 140.0, false);
     const double bands[][2] = { { 30, 90 }, { 90, 250 }, { 250, 800 }, { 800, 2500 }, { 2500, 8000 } };
@@ -279,10 +297,12 @@ void testCharacterAudible()
 
 void testSettledPitch()
 {
-    // After the sweep the body must sit on TUNE (A1 - 1 st = 51.9 Hz) at any sample rate.
+    // After the sweep the body must sit on TUNE at any sample rate (pitchFall off: pure settle check).
     for (double sr : { 22050.0, 24000.0, 44100.0, 96000.0 })
     {
-        auto p = preset ("Warehouse Punch");
+        auto p = preset ("Classic Punch");
+        p.pitchFall = 0.0f;
+        const double expected = baseFrequency (p.tune);
         const auto a = renderKick (p, sr, 140.0, false);
         const float* x = a.getReadPointer (0);
         int first = -1, last = -1, count = 0;
@@ -294,13 +314,84 @@ void testSettledPitch()
                 ++count;
             }
         const double f = count > 1 ? (count - 1) * sr / (last - first) : 0.0;
-        expect (std::abs (f - 51.91) < 1.0, "settled pitch at " + juce::String (sr) + " Hz is " + juce::String (f, 2) + " Hz");
+        expect (std::abs (f - expected) < 1.0, "settled pitch (" + juce::String (expected, 2) + " Hz) at " + juce::String (sr) + " Hz is " + juce::String (f, 2) + " Hz");
     }
+}
+
+// Level (dB) of a 40 ms RMS window of channel 0, centred on t (>= 2 periods of a ~50 Hz body).
+double frameDb (const juce::AudioBuffer<float>& a, double t, double sr)
+{
+    const int from = std::max (0, (int) ((t - 0.02) * sr)), to = std::min (a.getNumSamples(), (int) ((t + 0.02) * sr));
+    double s = 0;
+    for (int i = from; i < to; ++i) s += (double) a.getSample (0, i) * a.getSample (0, i);
+    return db (std::sqrt (s / std::max (1, to - from)));
+}
+
+void testGatedBody()
+{
+    // Measured hard-techno kicks hold their body (tail only 1-2 dB under the hit) and then stop.
+    auto p = preset ("Hard Techno Core");
+    p.body = 1.0f; p.rumble = 0.0f; p.drive = 0.0f; p.click = 0.0f; p.character = 0.0f; // no clipping anywhere
+    p.outputDb = -18.0f; // stay clear of the output safety limiter: measure the envelope itself
+    const auto a = stream (p, 48000.0, 256);
+    const double D = decayMs (p.decay) * 0.001;
+    const double early = frameDb (a, 0.2 * D, 48000), late = frameDb (a, 0.75 * D, 48000);
+    expect (early - late <= 2.5, "BODY 100% holds the body (drop " + juce::String (early - late, 1) + " dB at 75% of decay)");
+    // The end must not click: the last 10 ms may not step harder than the body does.
+    const int endI = (int) (D * 48000);
+    expect (maxStep (a, 0, endI - 480, endI + 480) <= maxStep (a, 0, (int) (0.3 * D * 48000), (int) (0.5 * D * 48000)) * 1.2,
+            "gated end is click-free");
+}
+
+void testBodyTone()
+{
+    auto p = preset ("Classic Schranz");
+    // The original driven-schranz scenario: hard drive with clip and HARD character.
+    p.rumble = 0.0f; p.drive = 0.8f; p.driveMode = DriveMode::clip; p.charMode = CharMode::hard; p.character = 0.7f; p.click = 0.55f;
+    p.bodyTone = 1.0f;
+    const auto open = renderKick (p, 48000.0, 140.0, false);
+    p.bodyTone = 0.0f;
+    const auto dark = renderKick (p, 48000.0, 140.0, false);
+    auto seg = [] (const juce::AudioBuffer<float>& a, double t0, double t1, double f1, double f2)
+    { return db (bandRms (a.getReadPointer (0, (int) (t0 * 48000)), (int) ((t1 - t0) * 48000), 48000, f1, f2)); };
+    const double midDrop = seg (open, 0.045, 0.14, 700, 3000) - seg (dark, 0.045, 0.14, 700, 3000);
+    const double lowDiff = std::abs (seg (open, 0.045, 0.14, 30, 120) - seg (dark, 0.045, 0.14, 30, 120));
+    const double attackDiff = std::abs (seg (open, 0.0, 0.006, 700, 8000) - seg (dark, 0.0, 0.006, 700, 8000));
+    // Measured kicks scoop the body mids but keep the distortion "fizz" on top.
+    const double highDiff = std::abs (seg (open, 0.045, 0.14, 4000, 12000) - seg (dark, 0.045, 0.14, 4000, 12000));
+    expect (highDiff <= 3.0, "bodyTone keeps the body's top end (" + juce::String (highDiff, 1) + " dB)");
+    expect (midDrop >= 8.0, "bodyTone 0 scoops the body mids (" + juce::String (midDrop, 1) + " dB)");
+    expect (lowDiff <= 1.5, "bodyTone keeps the low body (" + juce::String (lowDiff, 2) + " dB)");
+    expect (attackDiff <= 1.5, "bodyTone keeps the attack (" + juce::String (attackDiff, 2) + " dB)");
+}
+
+double pitchAt (const juce::AudioBuffer<float>& a, double t, double sr)
+{
+    // Zero-crossing frequency over a 60 ms window centred on t.
+    int first = -1, last = -1, count = 0;
+    for (int i = std::max (1, (int) ((t - 0.03) * sr)); i < std::min (a.getNumSamples(), (int) ((t + 0.03) * sr)); ++i)
+        if (a.getSample (0, i - 1) < 0.0f && a.getSample (0, i) >= 0.0f) { if (first < 0) first = i; last = i; ++count; }
+    return count > 1 ? (count - 1) * sr / (last - first) : 0.0;
+}
+
+void testPitchFall()
+{
+    // Measured kicks keep falling in pitch through the tail (2-4 semitones from 100 to 250 ms).
+    auto p = preset ("Deep Drop");
+    p.click = 0.0f; p.rumble = 0.0f; p.drive = 0.0f; p.character = 0.0f; p.decay = 0.45f; p.body = 0.9f; p.outputDb = -12.0f;
+    double st[2];
+    for (int k = 0; k < 2; ++k)
+    {
+        p.pitchFall = k == 0 ? 0.0f : 12.0f;
+        const auto a = renderKick (p, 48000.0, 140.0, false);
+        st[k] = 12.0 * std::log2 (pitchAt (a, 0.10, 48000) / pitchAt (a, 0.25, 48000));
+    }
+    expect (st[1] - st[0] >= 2.0, "pitchFall 12 adds a 2+ st fall from 100 to 250 ms (" + juce::String (st[1] - st[0], 2) + " st)");
 }
 
 void testVelocity()
 {
-    auto p = preset ("Warehouse Punch");
+    auto p = preset ("Classic Punch");
     const auto loud = renderKick (p, 48000.0, 140.0, false, 1.0f);
     const auto soft = renderKick (p, 48000.0, 140.0, false, 0.4f);
     expect (stats (soft).peak < stats (loud).peak * 0.9, "velocity changes level");
@@ -359,6 +450,52 @@ void testPresetRoundTripAndWav()
 int main (int argc, char** argv)
 {
     // No GUI initialisation: the tests are pure DSP and file I/O (and run under Wine).
+    if (argc > 1 && juce::String (argv[1]) == "--dump-presets")
+    {
+        // name|category|id=value ... for Tools/fit_kicks.py
+        for (const auto& pr : factoryPresets())
+        {
+            std::cout << pr.name << "|" << pr.category << "|";
+            for (const auto& [k, v] : pr.values) std::cout << k << "=" << v << " ";
+            std::cout << "\n";
+        }
+        return 0;
+    }
+    if (argc > 1 && juce::String (argv[1]) == "--serve")
+    {
+        // Render server for Tools/fit_kicks.py. Each stdin line: "paramId=value ... _len=0.6 _sr=48000".
+        // Unlisted parameters use defaults. Writes len*sr stereo frames of float32 (interleaved) to stdout.
+        std::string line;
+        std::vector<float> out;
+        while (std::getline (std::cin, line))
+        {
+            Snapshot s;
+            double len = 0.6, sr = 48000.0;
+            std::istringstream ss (line);
+            std::string tok;
+            while (ss >> tok)
+            {
+                const auto eq = tok.find ('=');
+                if (eq == std::string::npos) continue;
+                const auto key = juce::String (tok.substr (0, eq));
+                const float value = std::stof (tok.substr (eq + 1));
+                if (key == "_len") len = value;
+                else if (key == "_sr") sr = value;
+                else s[key] = value;
+            }
+            const auto audio = stream (paramsFromSnapshot (s), sr, 512, 1);
+            const int frames = std::min (audio.getNumSamples(), (int) (len * sr));
+            out.resize ((size_t) frames * 2);
+            for (int i = 0; i < frames; ++i)
+            {
+                out[(size_t) i * 2] = audio.getSample (0, i);
+                out[(size_t) i * 2 + 1] = audio.getSample (1, i);
+            }
+            std::fwrite (out.data(), sizeof (float), out.size(), stdout);
+            std::fflush (stdout);
+        }
+        return 0;
+    }
     const bool report = argc > 1 && juce::String (argv[1]) == "--report";
     if (argc > 2 && juce::String (argv[1]) == "--export")
     {
@@ -383,7 +520,10 @@ int main (int argc, char** argv)
     testSampleRatesAndBlocks();
     testNoClicksOnParameterJumps();
     testCharacterAudible();
+    testPitchFall();
     testSettledPitch();
+    testGatedBody();
+    testBodyTone();
     testVelocity();
     testPresetRoundTripAndWav();
     std::cout << (failures == 0 ? "PASS " : "FAILED ") << (checks - failures) << "/" << checks << " checks\n";

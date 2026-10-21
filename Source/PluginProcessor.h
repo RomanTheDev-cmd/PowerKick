@@ -48,7 +48,7 @@ public:
     double getCurrentSampleRate() const { return currentSampleRate > 0 ? currentSampleRate : 48000.0; }
 
     // Preset / comparison state shown by the editor.
-    juce::String currentPresetName { "Warehouse Punch" };
+    juce::String currentPresetName { "Hard Techno Core" };
     pk::Snapshot slotA, slotB;
     juce::String slotNameA, slotNameB;
     bool slotBActive = false, slotBUsed = false; // B starts as a copy of A on first use
