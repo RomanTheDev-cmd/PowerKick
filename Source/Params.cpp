@@ -70,15 +70,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (unit (id::character, "Character", 0.3f));
     layout.add (unit (id::rumble, "Rumble", 0.0f));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::output, 1 }, "Output",
-                                       juce::NormalisableRange<float> (-24.0f, 6.0f, 0.1f), -2.5f,
+                                       juce::NormalisableRange<float> (-24.0f, 6.0f, 0.1f), -2.9f,
                                        Attr().withLabel ("dB").withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (v, 1) + " dB"; })));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::width, 1 }, "Stereo Width",
-                                       juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 40.0f,
+                                       juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f), 20.0f,
                                        Attr().withLabel ("%").withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (juce::roundToInt (v)) + " %"; })));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::delay, 1 }, "Stereo Delay",
-                                       juce::NormalisableRange<float> (0.0f, 15.0f, 0.01f, 0.6f), 3.0f,
+                                       juce::NormalisableRange<float> (0.0f, 15.0f, 0.01f, 0.6f), 0.0f,
                                        Attr().withLabel ("ms").withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (v, 2) + " ms"; })));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::driveMode, 1 }, "Drive Mode",
@@ -104,7 +104,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     {
         juce::NormalisableRange<float> range (150.0f, 2000.0f);
         range.setSkewForCentre (500.0f);
-        layout.add (std::make_unique<APF> (juce::ParameterID { id::splitFreq, 1 }, "Stereo Split", range, 500.0f,
+        layout.add (std::make_unique<APF> (juce::ParameterID { id::splitFreq, 1 }, "Stereo Split", range, 1000.0f,
                                            Attr().withStringFromValueFunction ([] (float v, int)
                                            { return v < 1000.0f ? juce::String (juce::roundToInt (v)) + " Hz" : juce::String (v / 1000.0f, 1) + " kHz"; })));
     }

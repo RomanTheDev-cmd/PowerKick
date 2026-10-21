@@ -10,9 +10,10 @@ p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Source", "Pr
 s = open(p).read()
 worst = 0.0
 for name, cat, v in load_presets():
-    pk = 20 * np.log10(np.max(np.abs(r.render(v))))
+    # OUTPUT is linear below the emergency ceiling: probe 24 dB lower and solve exactly.
+    pk = 20 * np.log10(np.max(np.abs(r.render({**v, "output": v["output"] - 24.0})))) + 24.0
     worst = max(worst, abs(pk + 1.0))
-    m = re.search(r'(\{ "%s",\s+"[^"]+",\s+\{ )([^}]*)( \} \},)' % re.escape(name), s)
+    m = re.search(r'(\{ "%s",\s+"[^"]+",\s+\{ )([^}]*)( \}(?:, "[^"]*")? \},)' % re.escape(name), s)
     vals = [x.strip() for x in m.group(2).split(",")]
     vals[8] = "%.1ff" % max(-24.0, min(6.0, v["output"] + (-1.0 - pk)))
     s = s[:m.start(2)] + ", ".join(vals) + s[m.end(2):]
