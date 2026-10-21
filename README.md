@@ -2,7 +2,10 @@
 
 Синтезатор бочек для Techno, Hard Techno, Schranz, Industrial и Hard Dance. Это настоящий синтез, а не сэмплер: в плагине нет ни одного записанного звука.
 
-Форматы: AU и VST3 (macOS, универсальная сборка Apple Silicon + Intel), а также отдельное приложение Standalone. Исходный код на C++/JUCE 8 и кроссплатформенный; сборка под Windows пока не делалась и не проверялась.
+Форматы:
+
+- **macOS:** AU и VST3, универсальная сборка Apple Silicon + Intel, а также отдельное приложение Standalone.
+- **Windows 10/11 x64:** VST3 и отдельное приложение. Собрано на Mac и проверено в Wine; в настоящей Windows не проверялось.
 
 ## Установка (macOS)
 
@@ -13,6 +16,10 @@
 - `PowerKick.app` — отдельное приложение, работает без DAW.
 
 На этом Mac оба плагина уже установлены. В DAW плагин отображается от разработчика **MyDarknessDays** (Logic: Audio Units → MyDarknessDays → PowerKick).
+
+### Windows
+
+Распакуйте `Сборки/PowerKick-1.0.0-Windows-x64.zip` и скопируйте папку `PowerKick.vst3` целиком в `C:\Program Files\Common Files\VST3\`. Подробности — в `УСТАНОВКА.txt` внутри архива.
 
 ## Управление
 
@@ -82,7 +89,8 @@ build/powerkick_tests_artefacts/Release/powerkick_tests
 ```
 
 - `-DPOWERKICK_COPY_AFTER_BUILD=ON` ставит плагины в системные папки после сборки.
-- На Windows: Visual Studio 2022, те же команды; соберётся VST3.
+- **Windows** (на Windows): Visual Studio 2022, те же команды; соберётся VST3.
+- **Windows** (кросс-сборка на Mac): задайте `WIN_LLVM_ROOT` (llvm-mingw), `WIN_SDK` (`xwin splat`) и `WIN_WINE` (обёртка для запуска wine), затем вызовите cmake с `-DCMAKE_TOOLCHAIN_FILE=cmake/windows-clang-msvc.cmake`.
 - `powerkick_tests --report` выводит уровни пресетов.
 - `powerkick_tests --export <папка>` рендерит все 26 пресетов в WAV.
 
