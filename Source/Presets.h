@@ -20,6 +20,10 @@ struct Preset
 const std::vector<Preset>& factoryPresets();
 
 Snapshot captureSnapshot (const juce::AudioProcessorValueTreeState& state);
+
+// Parameters added after the first release, with the value that reproduces the old sound.
+// Older preset files and projects that lack them load these values, not today's defaults.
+const Snapshot& legacyNeutral();
 // Missing IDs fall back to parameter defaults, so a preset always defines the full sound.
 void applySnapshot (juce::AudioProcessorValueTreeState& state, const Snapshot& values);
 KickParams paramsFromSnapshot (const Snapshot& values);
