@@ -1,0 +1,50 @@
+{
+  "Name": "PowerKick",
+  "Version": "1.0.0",
+  "Factory Info": {
+    "Vendor": "MyDarknessDays",
+    "URL": "",
+    "E-Mail": "",
+    "Flags": {
+      "Unicode": true,
+      "Classes Discardable": false,
+      "Component Non Discardable": false,
+    },
+  },
+  "Classes": [
+    {
+      "CID": "ABCDEF019182FAEB4D64647950776B6B",
+      "Category": "Audio Module Class",
+      "Name": "PowerKick",
+      "Vendor": "MyDarknessDays",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.8.0",
+      "Sub Categories": [
+        "Instrument",
+        "Drum",
+        "Synth",
+      ],
+      "Class Flags": 2,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+    {
+      "CID": "ABCDEF011234ABCD4D64647950776B6B",
+      "Category": "Component Controller Class",
+      "Name": "PowerKick",
+      "Vendor": "MyDarknessDays",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.8.0",
+      "Sub Categories": [
+        "Instrument",
+        "Drum",
+        "Synth",
+      ],
+      "Class Flags": 2,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+  ],
+}

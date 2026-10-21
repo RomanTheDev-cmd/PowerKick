@@ -21,6 +21,13 @@ else()
   FetchContent_MakeAvailable(JUCE)
 endif()
 
+# Cross-compiling for Windows: the manifest helper cannot run here (run it with Wine instead).
+if(CMAKE_CROSSCOMPILING)
+  set(POWER_VST3_AUTO_MANIFEST FALSE)
+else()
+  set(POWER_VST3_AUTO_MANIFEST TRUE)
+endif()
+
 set(POWERKICK_FORMATS VST3 Standalone)
 if(APPLE)
   list(APPEND POWERKICK_FORMATS AU)
@@ -41,6 +48,7 @@ juce_add_plugin(PowerKick
   EDITOR_WANTS_KEYBOARD_FOCUS FALSE
   VST3_CATEGORIES Instrument Drum Synth
   AU_MAIN_TYPE kAudioUnitType_MusicDevice
+  VST3_AUTO_MANIFEST ${POWER_VST3_AUTO_MANIFEST}
   COPY_PLUGIN_AFTER_BUILD ${POWERKICK_COPY_AFTER_BUILD})
 
 set(POWERKICK_CORE_SOURCES

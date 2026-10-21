@@ -220,7 +220,7 @@ void testNoClicksOnParameterJumps()
     const double sr = 48000.0;
     dsp::KickEngine e;
     e.prepare (sr, 256);
-    juce::AudioBuffer<float> out (2, (int) sr);
+    juce::AudioBuffer<float> out (2, (int) sr + 256); // whole blocks must fit
     juce::MidiBuffer on, none;
     on.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
     for (int pos = 0; pos < (int) sr; pos += 256)
@@ -243,7 +243,7 @@ void testNoClicksOnParameterJumps()
     q.click = 0.0f;
     dsp::KickEngine e2;
     e2.prepare (sr, 256);
-    juce::AudioBuffer<float> o2 (2, (int) sr / 2);
+    juce::AudioBuffer<float> o2 (2, (int) sr / 2 + 256);
     for (int pos = 0; pos < (int) sr / 2; pos += 256)
     {
         juce::MidiBuffer m;
@@ -358,7 +358,7 @@ void testPresetRoundTripAndWav()
 
 int main (int argc, char** argv)
 {
-    juce::ScopedJuceInitialiser_GUI init;
+    // No GUI initialisation: the tests are pure DSP and file I/O (and run under Wine).
     const bool report = argc > 1 && juce::String (argv[1]) == "--report";
     if (argc > 2 && juce::String (argv[1]) == "--export")
     {
