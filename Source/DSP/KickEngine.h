@@ -616,12 +616,23 @@ public:
         return y + raw * 0.22 * y * y;
     }
 
-    // Keeps the peak of a full-scale hit near constant as drive rises.
+    // Keeps the peak of a full-scale hit near constant as drive rises. The true peak over
+    // inputs up to 0.9: Saturate/Clip (also with RAW) are monotonic, so the edge is the peak;
+    // Industrial folds, so it is searched densely (a 3-point estimate could hit its zeros and
+    // jump the level by >2 dB -- same class of bug Codex found in PowerBass).
     static double shaperNorm (double g, DriveMode mode, double raw) noexcept
     {
         double peak = 0.0;
-        for (double x : { 0.3, 0.6, 0.9 })
-            peak = std::max ({ peak, std::abs (shape (x, g, mode, raw)), std::abs (shape (-x, g, mode, raw)) });
+        if (mode == DriveMode::industrial)
+        {
+            for (int i = 1; i <= 128; ++i)
+            {
+                const double x = 0.9 * i / 128.0;
+                peak = std::max ({ peak, std::abs (shape (x, g, mode, raw)), std::abs (shape (-x, g, mode, raw)) });
+            }
+        }
+        else
+            peak = std::max (std::abs (shape (0.9, g, mode, raw)), std::abs (shape (-0.9, g, mode, raw)));
         return juce::jlimit (0.25, 4.0, 0.9 / std::max (peak, 1.0e-6));
     }
 

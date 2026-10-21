@@ -389,6 +389,28 @@ void testPitchFall()
     expect (st[1] - st[0] >= 2.0, "pitchFall 12 adds a 2+ st fall from 100 to 250 ms (" + juce::String (st[1] - st[0], 2) + " st)");
 }
 
+void testDriveSweepIsSmooth()
+{
+    // Same class of bug Codex found in PowerBass: a few-point peak estimate of a non-monotonic
+    // shaper can land on its zeros and make the level jump. Level must follow DRIVE smoothly.
+    auto base = preset ("Classic Punch");
+    base.rumble = 0.0f; base.outputDb = -24.0f; base.character = 0.0f;
+    for (int m = 0; m < 3; ++m)
+    {
+        double prev = 0, worst = 0, at = 0;
+        for (int i = 0; i <= 100; ++i)
+        {
+            auto p = base; p.driveMode = (DriveMode) m; p.drive = 0.01f * (float) i;
+            const auto a = renderKick (p, 48000.0, 140.0, false);
+            const double level = db (stats (a, 0, std::min (a.getNumSamples(), 7200)).rms);
+            if (i > 0 && std::abs (level - prev) > worst) { worst = std::abs (level - prev); at = p.drive; }
+            prev = level;
+        }
+        expect (worst <= 2.0, "drive mode " + juce::String (m) + ": level follows DRIVE smoothly (max step "
+                                  + juce::String (worst, 2) + " dB at " + juce::String (at, 2) + ")");
+    }
+}
+
 void testVelocity()
 {
     auto p = preset ("Classic Punch");
@@ -521,6 +543,7 @@ int main (int argc, char** argv)
     testNoClicksOnParameterJumps();
     testCharacterAudible();
     testPitchFall();
+    testDriveSweepIsSmooth();
     testSettledPitch();
     testGatedBody();
     testBodyTone();
