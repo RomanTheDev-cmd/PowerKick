@@ -33,13 +33,13 @@ const Row rows[] = {
     { "Distorted Factory",   "Industrial",    { 1.0f, 0.322f, 0.930f, 0.928f, 1.000f, 0.900f, 0.900f, 0.200f, -2.5f, 35.1f, 3.0f, 1, 1, 28.4f, 27.4f, 1, 0.000f, 0.000f, 0, 0.650f, 0.3f } }, // fit 16.5 to ITHTS Distorted Kick Shot 6.wav (cluster of 27)
     { "Industrial Rumble",   "Industrial",    { 0.7f, 0.424f, 0.799f, 0.401f, 0.700f, 0.544f, 0.446f, 0.700f, -1.9f, 0.0f, 0.0f, 1, 3, 29.9f, 35.6f, 1, 0.500f, 0.000f, 0, 0.731f, 0.5f } }, // fit 13.0 to OBI Hard Industrial Kick 16.wav (cluster of 57)
     // Hand-made (no close reference cluster):
-    { "Steel Press",      "Industrial",  { 1, .40f, .80f, .65f, .60f, .75f, .70f, .35f, -0.8f, 80, 10, 2, 3, 38, 22, 2, .90f, .45f, 0, 1, 0 } },
-    { "Wide Iron Sub",    "Industrial",  { -2, .65f, .65f, .70f, .50f, .70f, .75f, .40f, 0.6f, 100, 14, 2, 4, 28, 34, 2, .55f, .55f, 1, 1, 0 } },
+    { "Steel Press",      "Industrial",  { 1, .40f, .80f, .65f, .60f, .75f, .70f, .35f, -0.3f, 80, 10, 2, 3, 38, 22, 2, .90f, .45f, 0, 1, 0 } },
+    { "Wide Iron Sub",    "Industrial",  { -2, .65f, .65f, .70f, .50f, .70f, .75f, .40f, 0.7f, 100, 14, 2, 4, 28, 34, 2, .55f, .55f, 1, 1, 0 } },
     // Hand-made: the reference folder has no rave / hard-dance kicks.
     { "Gabba Lite",       "Rave / Hard Dance", { 4, .45f, .90f, .75f, .55f, .90f, .70f, 0, -2.4f, 0, 0, 1, 3, 46, 30, 1, .60f, .50f, 0, 1, 0 } },
     { "Hardstyle Tok",    "Rave / Hard Dance", { 3, .50f, .85f, .70f, .50f, .75f, .70f, .10f, -1.2f, 25, 2, 0, 1, 48, 45, 1, .70f, .50f, 0, 1, 0 } },
     { "Euphoric Punch",   "Rave / Hard Dance", { 4, .40f, .90f, .60f, .55f, .55f, .60f, 0, -1.7f, 35, 3, 0, 1, 42, 30, 0, .60f, .50f, 0, 1, 0 } },
-    { "Rawstyle Screech", "Rave / Hard Dance", { 3, .48f, .85f, .75f, .60f, .95f, .85f, .15f, -0.3f, 45, 4, 2, 4, 46, 40, 2, .80f, .50f, 0, 1, 0 } },
+    { "Rawstyle Screech", "Rave / Hard Dance", { 3, .48f, .85f, .75f, .60f, .95f, .85f, .15f, 1.1f, 45, 4, 2, 4, 46, 40, 2, .80f, .50f, 0, 1, 0 } },
 };
 
 const char* const rowIds[21] = { id::tune, id::decay, id::punch, id::body, id::click, id::drive, id::character,
