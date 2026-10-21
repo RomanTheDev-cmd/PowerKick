@@ -1,0 +1,50 @@
+{
+  "Name": "PowerKick",
+  "Version": "1.0.0",
+  "Factory Info": {
+    "Vendor": "Roman",
+    "URL": "",
+    "E-Mail": "",
+    "Flags": {
+      "Unicode": true,
+      "Classes Discardable": false,
+      "Component Non Discardable": false,
+    },
+  },
+  "Classes": [
+    {
+      "CID": "ABCDEF019182FAEB526D6E6B50776B6B",
+      "Category": "Audio Module Class",
+      "Name": "PowerKick",
+      "Vendor": "Roman",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.8.0",
+      "Sub Categories": [
+        "Instrument",
+        "Drum",
+        "Synth",
+      ],
+      "Class Flags": 2,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+    {
+      "CID": "ABCDEF011234ABCD526D6E6B50776B6B",
+      "Category": "Component Controller Class",
+      "Name": "PowerKick",
+      "Vendor": "Roman",
+      "Version": "1.0.0",
+      "SDKVersion": "VST 3.8.0",
+      "Sub Categories": [
+        "Instrument",
+        "Drum",
+        "Synth",
+      ],
+      "Class Flags": 2,
+      "Cardinality": 2147483647,
+      "Snapshots": [
+      ],
+    },
+  ],
+}
