@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <iostream>
 #include <sstream>
+#include <set>
 
 using namespace pk;
 
@@ -69,6 +70,24 @@ double bandRmsSteep (const float* x, int n, double sr, double f1, double f2)
     return std::sqrt (sum / std::max (1, n));
 }
 
+// Energy in [f1, f2] from a Hann-windowed DFT (Goertzel per bin): no leakage from strong
+// content outside the band, unlike a filter. RMS-equivalent amplitude.
+double bandRmsDft (const float* x, int n, double sr, double f1, double f2)
+{
+    std::vector<double> w ((size_t) n);
+    double wsum = 0;
+    for (int i = 0; i < n; ++i) { w[(size_t) i] = 0.5 - 0.5 * std::cos (2.0 * 3.14159265358979 * i / (n - 1)); wsum += w[(size_t) i] * w[(size_t) i]; }
+    double e = 0;
+    for (int k = (int) std::ceil (f1 * n / sr); k <= (int) (f2 * n / sr); ++k)
+    {
+        const double c = 2.0 * std::cos (2.0 * 3.14159265358979 * k / n);
+        double s1 = 0, s2 = 0;
+        for (int i = 0; i < n; ++i) { const double s0 = x[i] * w[(size_t) i] + c * s1 - s2; s2 = s1; s1 = s0; }
+        e += s1 * s1 + s2 * s2 - c * s1 * s2;
+    }
+    return std::sqrt (2.0 * e / (wsum * n));
+}
+
 double bandRms (const float* x, int n, double sr, double f1, double f2)
 {
     dsp::LR4 lo, hi;
@@ -113,12 +132,18 @@ juce::AudioBuffer<float> stream (const KickParams& p, double sr, int hostBlock, 
 void testPresetLibrary()
 {
     const auto& f = factoryPresets();
-    expect (f.size() == 26, "26 factory presets, got " + juce::String ((int) f.size()));
+    expect (f.size() == 300, "300 factory presets, got " + juce::String ((int) f.size()));
     std::map<juce::String, int> count;
     for (const auto& p : f) ++count[p.category];
-    expect (count["Techno"] == 6 && count["Hard Techno"] == 6 && count["Schranz"] == 6 && count["Industrial"] == 4
+    expect (count["Techno"] == 30 && count["Hard Techno"] == 110 && count["Schranz"] == 100 && count["Industrial"] == 56
                 && count["Rave / Hard Dance"] == 4,
-            "preset category split 6/6/6/4/4");
+            "preset category split 30/110/100/56/4");
+    std::set<juce::String> names;
+    for (const auto& p : f) names.insert (p.name);
+    expect (names.size() == f.size(), "factory preset names are unique");
+    int grouped = 0;
+    for (const auto& p : f) grouped += p.group.isNotEmpty() ? 1 : 0;
+    expect (grouped == (int) f.size(), "every factory preset has a browser group");
     int wide = 0;
     for (const auto& p : f) wide += p.values.at (id::width) >= 50.0f ? 1 : 0;
     expect (wide >= 5, "several presets demonstrate the stereo engine");
@@ -143,7 +168,8 @@ void testPresetsRender (bool report)
             side[(size_t) i] = 0.5f * (audio.getSample (0, i) - audio.getSample (1, i));
         }
         const double subMid = bandRms (mid.data(), n, 48000.0, 20.0, 100.0);
-        const double subSide = bandRmsSteep (side.data(), n, 48000.0, 20.0, 100.0);
+        const double subSide = bandRmsDft (side.data(), std::min (n, 48000), 48000.0, 20.0, 100.0)
+                               * std::sqrt ((double) std::min (n, 48000) / n);
         expect (db (subSide) - db (subMid) < -50.0, pr.name + ": sub stays mono (" + juce::String (db (subSide) - db (subMid), 1) + " dB)");
         if (report)
         {
@@ -428,7 +454,7 @@ void testStereoControlsAreAudible()
     // normal kick, DELAY must add a real time offset; the mono sum stays untouched (other tests).
     auto p = preset ("Hard Techno Core");
     p.rumble = 0.0f;
-    p.width = 100.0f; p.delayMs = 0.0f;
+    p.width = 100.0f; p.delayMs = 0.0f; p.splitHz = 500.0f; // the WIDTH knob itself, at the default SPLIT
     const auto wide = renderKick (p, 48000.0, 140.0, true);
     const double whole = sideToMidDb (wide, 20, 16000);
     expect (whole >= -20.0, "WIDTH 100% is clearly audible on a kick (side " + juce::String (whole, 1) + " dB re mid)");

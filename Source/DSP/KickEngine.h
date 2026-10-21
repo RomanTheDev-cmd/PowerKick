@@ -333,8 +333,9 @@ public:
     {
         sr = sampleRate;
         xoLow.set (120.0, sr);
-        sideHp1.highpass (150.0, std::sqrt (0.5), sr);
-        sideHp2.highpass (150.0, std::sqrt (0.5), sr);
+        // 8th-order Butterworth high-pass at 150 Hz on the side only (Q of the 4 sections).
+        static constexpr double q8[4] = { 0.5098, 0.6013, 0.9000, 2.5629 };
+        for (int k = 0; k < 4; ++k) sideHp[k].highpass (150.0, q8[k], sr);
         xoHigh.set (500.0, sr); // kick highs above 1 kHz are only ~-20 dB: widen from 500 Hz
         static constexpr double apMs[3] = { 1.31, 2.87, 4.73 };
         for (int i = 0; i < 3; ++i)
@@ -349,7 +350,7 @@ public:
     void reset()
     {
         xoLow.reset(); xoHigh.reset();
-        sideHp1.reset(); sideHp2.reset();
+        for (auto& h : sideHp) h.reset();
         for (auto& a : ap) a.reset();
         haas.reset();
         width.reset (targetWidth);
@@ -402,7 +403,9 @@ public:
         // The centre is never reduced: the mono sum is exactly the mono kick at any WIDTH/DELAY.
         // (The side of a kick is ~20 dB under the whole, so widening adds < 0.1 dB of level.)
         // Extra high-pass on the side only: no sub in the stereo field.
-        const double side = w * 0.9 * sideHp2.tick (sideHp1.tick (d + 2.0 * haasSide));
+        double sideSrc = d + 2.0 * haasSide;
+        for (auto& h : sideHp) sideSrc = h.tick (sideSrc);
+        const double side = w * 0.9 * sideSrc;
         const double centre = sub + body + high;
         l = centre + side;
         r = centre - side;
@@ -416,7 +419,7 @@ private:
     int splitCountdown = 0;
     double apLen[3] {};
     LR4 xoLow, xoHigh;
-    Biquad sideHp1, sideHp2;
+    Biquad sideHp[4];
     DelayLine ap[3], haas;
     Ramp width, delay;
 };

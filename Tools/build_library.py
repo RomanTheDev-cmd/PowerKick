@@ -5,7 +5,7 @@
   python3 build_library.py rows CURATED.json EXTRA.json NAMES.json  -> prints Presets.cpp rows
 
 Curated presets keep their hand-given names; extra presets get descriptive names from their
-sound (drive, length, click, rumble, width, note) and a browser group (Short/Medium/Long/Rumble).
+sound (drive, length, click, rumble, width, note) and a browser group (Short/Long/Rumble/Wide/Crushed/Driven/Clean).
 """
 import json, os, re, sys
 from concurrent.futures import ProcessPoolExecutor
@@ -21,7 +21,7 @@ ORDER = ["tune", "decay", "punch", "body", "click", "drive", "character", "rumbl
          "bodyTone", "pitchFall", "splitFreq"]
 INT = {"driveMode", "charMode", "clickType", "rumbleSync"}
 CATS = ["Techno", "Hard Techno", "Schranz", "Industrial", "Rave / Hard Dance"]
-GROUPS = ["Short", "Medium", "Long", "Rumble"]
+GROUPS = ["Short", "Long", "Rumble", "Wide", "Crushed", "Driven", "Clean"]
 NOTES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
@@ -30,10 +30,18 @@ def decay_ms(d):
 
 
 def group_of(p):
+    """Browser sub-group by the most distinctive trait (keeps every group browsable)."""
     if p.get("rumble", 0) > 0.3:
         return "Rumble"
     d = decay_ms(p.get("decay", 0.45))
-    return "Short" if d < 300 else ("Medium" if d < 450 else "Long")
+    if d < 300:
+        return "Short"
+    if d >= 450:
+        return "Long"
+    if p.get("width", 0) >= 50:
+        return "Wide"
+    drive = p.get("drive", 0.3)
+    return "Crushed" if drive >= 0.75 else ("Driven" if drive >= 0.5 else "Clean")
 
 
 def note_of(p):
