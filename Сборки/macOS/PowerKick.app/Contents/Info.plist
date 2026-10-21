@@ -8,7 +8,7 @@
     <key>CFBundleIconFile</key>
     <string></string>
     <key>CFBundleIdentifier</key>
-    <string>com.roman.powerkick</string>
+    <string>com.mydarknessdays.powerkick</string>
     <key>CFBundleName</key>
     <string>PowerKick</string>
     <key>CFBundleDisplayName</key>

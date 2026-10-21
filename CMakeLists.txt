@@ -27,10 +27,10 @@ if(APPLE)
 endif()
 
 juce_add_plugin(PowerKick
-  COMPANY_NAME "Roman"
+  COMPANY_NAME "MyDarknessDays"
   COMPANY_WEBSITE ""
-  BUNDLE_ID "com.roman.powerkick"
-  PLUGIN_MANUFACTURER_CODE Rmnk
+  BUNDLE_ID "com.mydarknessdays.powerkick"
+  PLUGIN_MANUFACTURER_CODE Mddy
   PLUGIN_CODE Pwkk
   PRODUCT_NAME "PowerKick"
   FORMATS ${POWERKICK_FORMATS}

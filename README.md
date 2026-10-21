@@ -12,7 +12,7 @@
 - `PowerKick.vst3` → `~/Library/Audio/Plug-Ins/VST3/` (Ableton, FL Studio, Cubase, Studio One, Reaper)
 - `PowerKick.app` — отдельное приложение, работает без DAW.
 
-На этом Mac оба плагина уже установлены. В Logic: Audio Units → Roman → PowerKick (инструмент).
+На этом Mac оба плагина уже установлены. В DAW плагин отображается от разработчика **MyDarknessDays** (Logic: Audio Units → MyDarknessDays → PowerKick).
 
 ## Управление
 

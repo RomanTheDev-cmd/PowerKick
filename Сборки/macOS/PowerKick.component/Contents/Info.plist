@@ -8,7 +8,7 @@
     <key>CFBundleIconFile</key>
     <string></string>
     <key>CFBundleIdentifier</key>
-    <string>com.roman.powerkick</string>
+    <string>com.mydarknessdays.powerkick</string>
     <key>CFBundleName</key>
     <string>PowerKick</string>
     <key>CFBundleDisplayName</key>
@@ -29,13 +29,13 @@
     <array>
       <dict>
         <key>name</key>
-        <string>Roman: PowerKick</string>
+        <string>MyDarknessDays: PowerKick</string>
         <key>description</key>
         <string>PowerKick</string>
         <key>factoryFunction</key>
         <string>PowerKickAUFactory</string>
         <key>manufacturer</key>
-        <string>Rmnk</string>
+        <string>Mddy</string>
         <key>type</key>
         <string>aumu</string>
         <key>subtype</key>

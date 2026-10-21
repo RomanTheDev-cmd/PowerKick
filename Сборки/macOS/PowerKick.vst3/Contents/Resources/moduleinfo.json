@@ -2,7 +2,7 @@
   "Name": "PowerKick",
   "Version": "1.0.0",
   "Factory Info": {
-    "Vendor": "Roman",
+    "Vendor": "MyDarknessDays",
     "URL": "",
     "E-Mail": "",
     "Flags": {
@@ -13,10 +13,10 @@
   },
   "Classes": [
     {
-      "CID": "ABCDEF019182FAEB526D6E6B50776B6B",
+      "CID": "ABCDEF019182FAEB4D64647950776B6B",
       "Category": "Audio Module Class",
       "Name": "PowerKick",
-      "Vendor": "Roman",
+      "Vendor": "MyDarknessDays",
       "Version": "1.0.0",
       "SDKVersion": "VST 3.8.0",
       "Sub Categories": [
@@ -30,10 +30,10 @@
       ],
     },
     {
-      "CID": "ABCDEF011234ABCD526D6E6B50776B6B",
+      "CID": "ABCDEF011234ABCD4D64647950776B6B",
       "Category": "Component Controller Class",
       "Name": "PowerKick",
-      "Vendor": "Roman",
+      "Vendor": "MyDarknessDays",
       "Version": "1.0.0",
       "SDKVersion": "VST 3.8.0",
       "Sub Categories": [
