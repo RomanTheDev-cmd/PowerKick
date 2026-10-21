@@ -21,8 +21,8 @@ else()
   FetchContent_MakeAvailable(JUCE)
 endif()
 
-# Cross-compiling for Windows: the manifest helper cannot run here (run it with Wine instead).
-if(CMAKE_CROSSCOMPILING)
+# Cross-compiling for Windows: the manifest helper needs an emulator (Wine) to run here.
+if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
   set(POWER_VST3_AUTO_MANIFEST FALSE)
 else()
   set(POWER_VST3_AUTO_MANIFEST TRUE)
