@@ -79,3 +79,14 @@ target_link_libraries(powerkick_tests
 
 enable_testing()
 add_test(NAME powerkick_tests COMMAND powerkick_tests)
+
+# Wrapper tests: processor, state, presets through the host path and the editor, linked
+# against the plug-in's shared code. (Shared code exports JUCE_STANDALONE_APPLICATION=0.)
+juce_add_console_app(powerkick_wrapper_tests PRODUCT_NAME "PowerKick wrapper tests")
+get_target_property(POWERKICK_WRAP_DEFS powerkick_wrapper_tests COMPILE_DEFINITIONS)
+list(REMOVE_ITEM POWERKICK_WRAP_DEFS "JUCE_STANDALONE_APPLICATION=1")
+set_target_properties(powerkick_wrapper_tests PROPERTIES COMPILE_DEFINITIONS "${POWERKICK_WRAP_DEFS}")
+target_sources(powerkick_wrapper_tests PRIVATE Tests/WrapperTests.cpp)
+target_include_directories(powerkick_wrapper_tests PRIVATE Source)
+target_link_libraries(powerkick_wrapper_tests PRIVATE PowerKick juce::juce_audio_utils)
+add_test(NAME powerkick_wrapper_tests COMMAND powerkick_wrapper_tests)

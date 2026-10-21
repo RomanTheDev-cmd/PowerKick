@@ -378,8 +378,9 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
       character (p.state, pk::id::character, "CHARACTER", "Intensity of the selected colour: Deep, Punchy, Dark, Hard, Raw"),
       rumble (p.state, pk::id::rumble, "RUMBLE", "Tempo-synced rumble tail, ducked under every hit"),
       output (p.state, pk::id::output, "OUTPUT", "Output level"),
-      width (p.state, pk::id::width, "WIDTH", "Stereo width of the upper harmonics only; sub and body stay mono", true),
-      delay (p.state, pk::id::delay, "DELAY", "Time offset of the widened highs (needs WIDTH above 0)", true)
+      width (p.state, pk::id::width, "WIDTH", "Stereo width above SPLIT; the sub always stays mono", true),
+      delay (p.state, pk::id::delay, "DELAY", "Time offset between left and right in the widened part (needs WIDTH above 0)", true),
+      split (p.state, pk::id::splitFreq, "SPLIT", "Widening starts above this frequency; the sub below 120 Hz always stays mono", true)
 {
     setLookAndFeel (&lnf);
     tune.slider.getProperties().set ("bipolar", true);
@@ -388,7 +389,7 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
     drive.setSelector (pk::id::driveMode);
     rumble.setSelector (pk::id::rumbleSync);
 
-    for (auto* k : { &tune, &decay, &punch, &body, &click, &drive, &character, &rumble, &output, &width, &delay })
+    for (auto* k : { &tune, &decay, &punch, &body, &click, &drive, &character, &rumble, &output, &width, &delay, &split })
         addAndMakeVisible (*k);
     for (auto* b : { &prevButton, &nextButton, &presetButton, &aButton, &bButton, &copyButton, &menuButton, &previewButton,
                      &exportButton, &variationButton, &undoButton })
@@ -551,6 +552,7 @@ void PowerKickEditor::resized()
     f.removeFromLeft (S (64));
     width.setBounds (f.removeFromLeft (S (84)));
     delay.setBounds (f.removeFromLeft (S (84)));
+    split.setBounds (f.removeFromLeft (S (84)));
     auto var = f.removeFromRight (S (220)).withSizeKeepingCentre (S (220), S (30));
     undoButton.setBounds (var.removeFromRight (S (72)));
     var.removeFromRight (S (8));
@@ -570,7 +572,9 @@ void PowerKickEditor::timerCallback()
     const int charIndex = juce::roundToInt (proc.state.getRawParameterValue (pk::id::charMode)->load());
     for (int i = 0; i < 5; ++i)
         charButtons[(size_t) i].setToggleState (i == charIndex, juce::dontSendNotification);
-    delay.slider.setEnabled (proc.state.getRawParameterValue (pk::id::width)->load() > 0.0f);
+    const bool stereoOn = proc.state.getRawParameterValue (pk::id::width)->load() > 0.0f;
+    delay.slider.setEnabled (stereoOn);
+    split.slider.setEnabled (stereoOn);
     undoButton.setEnabled (! proc.variationUndo.empty());
 
     // Re-render the preview waveform once the knobs settle.
@@ -619,10 +623,26 @@ void PowerKickEditor::showPresetMenu()
         cats.addIfNotAlreadyThere (p.category);
     for (const auto& c : cats)
     {
+        // Category -> optional sub-group -> preset (300 presets stay browsable).
+        juce::StringArray groups;
+        for (const auto& p : all)
+            if (p.category == c) groups.addIfNotAlreadyThere (p.group);
         juce::PopupMenu sub;
-        for (size_t i = 0; i < all.size(); ++i)
-            if (all[i].category == c)
-                sub.addItem ((int) i + 1, all[i].name, true, all[i].name == proc.currentPresetName);
+        const bool nested = groups.size() > 1;
+        for (const auto& g : groups)
+        {
+            juce::PopupMenu items;
+            bool ticked = false;
+            for (size_t i = 0; i < all.size(); ++i)
+                if (all[i].category == c && all[i].group == g)
+                {
+                    const bool current = all[i].name == proc.currentPresetName;
+                    ticked = ticked || current;
+                    (nested && g.isNotEmpty() ? items : sub).addItem ((int) i + 1, all[i].name, true, current);
+                }
+            if (nested && g.isNotEmpty())
+                sub.addSubMenu (g, items, true, nullptr, ticked);
+        }
         menu.addSubMenu (c, sub);
     }
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetButton),

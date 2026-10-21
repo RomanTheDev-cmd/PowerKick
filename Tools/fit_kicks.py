@@ -15,7 +15,7 @@ if os.environ.get("PK_NUMPY_PATH"):
 import numpy as np
 from kick_features import features, distance
 
-TESTS = os.path.expanduser("~/Library/Caches/PowerKickBuild/powerkick_tests_artefacts/Release/powerkick_tests")
+TESTS = os.environ.get("PK_TESTS", os.path.expanduser("~/Library/Caches/PowerKickBuild/powerkick_tests_artefacts/Release/powerkick_tests"))
 SR, LEN, BPM = 48000, 0.6, 145
 FIT_OUTPUT = -12.0     # fixed during fitting: density must come from synthesis, never from output clipping
 TARGET_PEAK = -1.0     # presets ship with ~1 dB headroom for the mix
@@ -199,8 +199,34 @@ def fit(out_path, per_cat):
     print("done in %.0f s" % (time.time() - t0))
 
 
+def fit_extra(out_path, alloc, exclude_path):
+    """More presets: k-medoids with k = alloc[category] over references not already used as
+    targets by the curated set (exclude_path = an earlier fit JSON)."""
+    used = {m["medoid"] for m in json.load(open(exclude_path))}
+    refs, presets = load_refs(), load_presets()
+    starts = [v for _, c, v in presets]
+    jobs, meta = [], []
+    for cat, k in alloc.items():
+        pool = [x for x in refs if x["category"] == cat and x["file"] not in used]
+        k = min(k, len(pool))
+        med, lab, D = kmedoids([x["feat"] for x in pool], k)
+        for j, m in enumerate(med):
+            jobs.append((pool[m]["feat"], [dict(s) for s in starts], 1000 + len(jobs), int(os.environ.get("FIT_ITERS", 250))))
+            meta.append({"category": cat, "cluster_size": int(np.sum(lab == j)), "medoid": pool[m]["file"]})
+    t0 = time.time()
+    with ProcessPoolExecutor(max_workers=int(os.environ.get("FIT_WORKERS", 9))) as ex:
+        results = list(ex.map(fit_one, jobs, chunksize=1))
+    for m, (p, c, parts) in zip(meta, results):
+        m.update({"params": p, "distance": c, "parts": parts})
+    json.dump(meta, open(out_path, "w"), indent=1, ensure_ascii=False)
+    d = [m["distance"] for m in meta]
+    print("%d extra presets in %.0f s, distance median %.1f, p90 %.1f" % (len(meta), time.time() - t0, np.median(d), np.percentile(d, 90)))
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "audit":
         audit()
+    elif sys.argv[1] == "fit-extra":
+        fit_extra(sys.argv[2], json.loads(os.environ["FIT_ALLOC"]), sys.argv[3])
     elif sys.argv[1] == "fit":
         fit(sys.argv[2], json.loads(os.environ.get("FIT_PER_CAT", '{"Techno": 6, "Hard Techno": 6, "Schranz": 6, "Industrial": 4}')))

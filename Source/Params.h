@@ -32,6 +32,7 @@ namespace id
     inline constexpr const char* keyTrack   = "keyTrack";
     inline constexpr const char* bodyTone   = "bodyTone";
     inline constexpr const char* pitchFall  = "pitchFall";
+    inline constexpr const char* splitFreq  = "splitFreq";
 }
 
 enum class DriveMode { saturate, clip, industrial };
@@ -64,7 +65,8 @@ struct KickParams
     float velSens = 0.6f;       // 0..1
     bool keyTrack = false;
     float pitchFall = 0.0f;     // 0..24 st: slow pitch fall through the tail (measured kicks fall 2-4 st at 100-250 ms)
-    float bodyTone = 1.0f;      // 0..1: mid scoop of the body after the attack (0 = -24 dB at ~1 kHz, 1 = none)
+    float bodyTone = 1.0f;
+    float splitHz = 500.0f;     // stereo widening above this frequency (150..2000 Hz)      // 0..1: mid scoop of the body after the attack (0 = -24 dB at ~1 kHz, 1 = none)
 };
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
