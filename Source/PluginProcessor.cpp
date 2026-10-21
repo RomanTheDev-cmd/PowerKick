@@ -6,7 +6,7 @@ PowerKickProcessor::PowerKickProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       state (*this, nullptr, "PowerKick", pk::createLayout())
 {
-    if (const int i = library.indexOf (currentPresetName); i >= 0)
+    if (const int i = library.indexOf (getPresetName()); i >= 0)
         pk::applySnapshot (state, library.all()[(size_t) i].values);
     slotA = slotB = pk::captureSnapshot (state);
 }
@@ -76,7 +76,7 @@ void PowerKickProcessor::loadPreset (int index)
     if (index < 0 || index >= (int) all.size())
         return;
     pk::applySnapshot (state, all[(size_t) index].values);
-    currentPresetName = all[(size_t) index].name;
+    setPresetName (all[(size_t) index].name);
     variationUndo.clear();
 }
 
@@ -85,7 +85,7 @@ void PowerKickProcessor::switchSlot (bool toB)
     if (toB == slotBActive)
         return;
     (slotBActive ? slotB : slotA) = pk::captureSnapshot (state);
-    (slotBActive ? slotNameB : slotNameA) = currentPresetName;
+    (slotBActive ? slotNameB : slotNameA) = getPresetName();
     if (toB && ! slotBUsed)
     {
         slotB = slotA;
@@ -94,7 +94,7 @@ void PowerKickProcessor::switchSlot (bool toB)
     }
     slotBActive = toB;
     pk::applySnapshot (state, slotBActive ? slotB : slotA);
-    currentPresetName = slotBActive ? slotNameB : slotNameA;
+    setPresetName (slotBActive ? slotNameB : slotNameA);
     variationUndo.clear();
 }
 
@@ -103,7 +103,7 @@ void PowerKickProcessor::copyAToB()
     if (! slotBActive)
     {
         slotA = pk::captureSnapshot (state);
-        slotNameA = currentPresetName;
+        slotNameA = getPresetName();
     }
     slotB = slotA;
     slotNameB = slotNameA;
@@ -178,7 +178,7 @@ juce::AudioProcessorEditor* PowerKickProcessor::createEditor() { return new Powe
 void PowerKickProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto tree = state.copyState();
-    tree.setProperty ("presetName", currentPresetName, nullptr);
+    tree.setProperty ("presetName", getPresetName(), nullptr);
     tree.setProperty ("fallbackBpm", fallbackBpm, nullptr);
     if (auto xml = tree.createXml())
         copyXmlToBinary (*xml, destData);
@@ -190,9 +190,17 @@ void PowerKickProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xml->hasTagName (state.state.getType()))
         {
             auto tree = juce::ValueTree::fromXml (*xml);
-            currentPresetName = tree.getProperty ("presetName", currentPresetName).toString();
+            setPresetName (tree.getProperty ("presetName", getPresetName()).toString());
             fallbackBpm = (double) tree.getProperty ("fallbackBpm", 140.0);
+            // Parameters added after this project was saved come back neutral (old sound).
+            juce::StringArray missing;
+            for (const auto& [pid, value] : pk::legacyNeutral())
+                if (xml->getChildByAttribute ("id", pid) == nullptr)
+                    missing.add (pid);
             state.replaceState (tree);
+            for (const auto& pid : missing)
+                if (auto* param = state.getParameter (pid))
+                    param->setValueNotifyingHost (param->convertTo0to1 (pk::legacyNeutral().at (pid)));
             slotA = slotB = pk::captureSnapshot (state);
             slotBActive = slotBUsed = false;
         }

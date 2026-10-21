@@ -60,7 +60,7 @@ void testStateRoundTrip()
     setPlain (a, pk::id::width, 66.0f);
     setPlain (a, pk::id::splitFreq, 900.0f);
     setPlain (a, pk::id::bodyTone, 0.25f);
-    a.currentPresetName = "My Saved Kick";
+    a.setPresetName ("My Saved Kick");
     juce::MemoryBlock mb;
     a.getStateInformation (mb);
 
@@ -70,7 +70,7 @@ void testStateRoundTrip()
     for (const auto& id : pk::allParamIds())
         same = same && std::abs (rawValue (a, id.toRawUTF8()) - rawValue (b, id.toRawUTF8())) < 1.0e-4f;
     expect (same, "project state restores every parameter");
-    expect (b.currentPresetName == "My Saved Kick", "project state restores the preset name");
+    expect (b.getPresetName() == "My Saved Kick", "project state restores the preset name");
 
     // Garbage must not crash or change anything.
     const float before = rawValue (b, pk::id::tune);
@@ -78,6 +78,24 @@ void testStateRoundTrip()
     b.setStateInformation (junk, (int) sizeof (junk));
     b.setStateInformation (nullptr, 0);
     expect (std::abs (rawValue (b, pk::id::tune) - before) < 1.0e-6f, "garbage state is ignored");
+}
+
+void testLegacyProjectMigration()
+{
+    // A project saved before the newer parameters existed: they must come back neutral.
+    PowerKickProcessor a;
+    juce::MemoryBlock mb;
+    a.getStateInformation (mb);
+    auto xml = juce::AudioProcessor::getXmlFromBinary (mb.getData(), (int) mb.getSize());
+    for (auto* id : { pk::id::bodyTone, pk::id::pitchFall, pk::id::splitFreq })
+        if (auto* e = xml->getChildByAttribute ("id", id)) xml->removeChildElement (e, true);
+    juce::MemoryBlock old;
+    juce::AudioProcessor::copyXmlToBinary (*xml, old);
+    PowerKickProcessor b;
+    b.setStateInformation (old.getData(), (int) old.getSize());
+    expect (std::abs (rawValue (b, pk::id::bodyTone) - 1.0f) < 1e-4f, "old project: bodyTone neutral");
+    expect (std::abs (rawValue (b, pk::id::pitchFall)) < 1e-4f, "old project: pitchFall neutral");
+    expect (std::abs (rawValue (b, pk::id::splitFreq) - 1000.0f) < 1.0f, "old project: SPLIT at the old 1 kHz");
 }
 
 void testPresetSwitchingWhilePlaying()
@@ -187,6 +205,7 @@ void testEditor()
 int main()
 {
     testStateRoundTrip();
+    testLegacyProjectMigration();
     testPresetSwitchingWhilePlaying();
     testAutomation();
     testMonoBus();

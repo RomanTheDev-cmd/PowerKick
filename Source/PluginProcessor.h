@@ -28,7 +28,7 @@ public:
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram (int) override {}
-    const juce::String getProgramName (int) override { return currentPresetName; }
+    const juce::String getProgramName (int) override { return getPresetName(); }
     void changeProgramName (int, const juce::String&) override {}
 
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -48,7 +48,9 @@ public:
     double getCurrentSampleRate() const { return currentSampleRate > 0 ? currentSampleRate : 48000.0; }
 
     // Preset / comparison state shown by the editor.
-    juce::String currentPresetName { "Hard Techno Core" };
+    // The preset name is read by the host from its own thread: guarded.
+    juce::String getPresetName() const { const juce::SpinLock::ScopedLockType l (nameLock); return presetName; }
+    void setPresetName (const juce::String& n) { const juce::SpinLock::ScopedLockType l (nameLock); presetName = n; }
     pk::Snapshot slotA, slotB;
     juce::String slotNameA, slotNameB;
     bool slotBActive = false, slotBUsed = false; // B starts as a copy of A on first use
@@ -62,6 +64,8 @@ public:
     bool undoVariation();
 
 private:
+    juce::String presetName { "Hard Techno Core" };
+    mutable juce::SpinLock nameLock;
     pk::dsp::KickEngine engine;
     std::atomic<double> hostBpm { 140.0 };
     double currentSampleRate = 0.0;

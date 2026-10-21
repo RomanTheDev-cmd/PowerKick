@@ -470,6 +470,20 @@ void testVelocity()
     expect (stats (soft).peak < stats (loud).peak * 0.9, "velocity changes level");
 }
 
+void testLegacyPresetMigration()
+{
+    // A preset saved before bodyTone / pitchFall / splitFreq existed must sound as it did:
+    // missing new parameters take their neutral value, not today's defaults.
+    const juce::String xml = "<PowerKickPreset format=\"1\" name=\"Old\" category=\"User\">"
+                             "<Param id=\"tune\" value=\"2\"/><Param id=\"drive\" value=\"0.4\"/></PowerKickPreset>";
+    Preset p;
+    juce::String err;
+    expect (presetFromXml (xml, p, err), "old preset parses");
+    expect (p.values.count (id::bodyTone) && std::abs (p.values[id::bodyTone] - 1.0f) < 1e-6f, "old preset: bodyTone neutral (1)");
+    expect (p.values.count (id::pitchFall) && std::abs (p.values[id::pitchFall]) < 1e-6f, "old preset: pitchFall neutral (0)");
+    expect (p.values.count (id::splitFreq) && std::abs (p.values[id::splitFreq] - 1000.0f) < 1e-3f, "old preset: SPLIT at the old fixed 1 kHz");
+}
+
 void testPresetRoundTripAndWav()
 {
     Snapshot s = factoryPresets()[21].values;
@@ -601,6 +615,7 @@ int main (int argc, char** argv)
     testGatedBody();
     testBodyTone();
     testVelocity();
+    testLegacyPresetMigration();
     testPresetRoundTripAndWav();
     std::cout << (failures == 0 ? "PASS " : "FAILED ") << (checks - failures) << "/" << checks << " checks\n";
     return failures == 0 ? 0 : 1;

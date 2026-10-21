@@ -319,7 +319,7 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     const auto audio = pk::renderKick (params, sr, proc.getHostBpm(), true);
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("PowerKick Drag");
     dir.createDirectory();
-    auto file = dir.getChildFile (juce::File::createLegalFileName ("PowerKick - " + proc.currentPresetName) + ".wav");
+    auto file = dir.getChildFile (juce::File::createLegalFileName ("PowerKick - " + proc.getPresetName()) + ".wav");
     juce::String err;
     if (pk::writeWav24 (file, audio, sr, err))
         juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this);
@@ -596,7 +596,7 @@ void PowerKickEditor::timerCallback()
 //==============================================================================
 void PowerKickEditor::refreshHeader()
 {
-    presetButton.setButtonText (proc.currentPresetName);
+    presetButton.setButtonText (proc.getPresetName());
     aButton.setToggleState (! proc.slotBActive, juce::dontSendNotification);
     bButton.setToggleState (proc.slotBActive, juce::dontSendNotification);
     copyButton.setEnabled (! proc.slotBActive);
@@ -607,7 +607,7 @@ void PowerKickEditor::stepPreset (int delta)
 {
     const auto& all = proc.library.all();
     if (all.empty()) return;
-    int i = proc.library.indexOf (proc.currentPresetName);
+    int i = proc.library.indexOf (proc.getPresetName());
     i = (i < 0 ? 0 : i + delta + (int) all.size()) % (int) all.size();
     proc.loadPreset (i);
     refreshHeader();
@@ -636,7 +636,7 @@ void PowerKickEditor::showPresetMenu()
             for (size_t i = 0; i < all.size(); ++i)
                 if (all[i].category == c && all[i].group == g)
                 {
-                    const bool current = all[i].name == proc.currentPresetName;
+                    const bool current = all[i].name == proc.getPresetName();
                     ticked = ticked || current;
                     (nested && g.isNotEmpty() ? items : sub).addItem ((int) i + 1, all[i].name, true, current);
                 }
@@ -651,7 +651,7 @@ void PowerKickEditor::showPresetMenu()
 
 void PowerKickEditor::showMainMenu()
 {
-    const int current = proc.library.indexOf (proc.currentPresetName);
+    const int current = proc.library.indexOf (proc.getPresetName());
     const bool isUser = current >= 0 && ! proc.library.all()[(size_t) current].isFactory();
     const bool keyTrack = proc.state.getRawParameterValue (pk::id::keyTrack)->load() > 0.5f;
 
@@ -682,24 +682,24 @@ void PowerKickEditor::showMainMenu()
     {
         juce::String err;
         if (r == 1)
-            askForName ("Save preset", proc.currentPresetName, [this] (juce::String name)
+            askForName ("Save preset", proc.getPresetName(), [this] (juce::String name)
             {
                 juce::String e;
                 if (! proc.library.saveUser (name, pk::captureSnapshot (proc.state), e)) { showError (e); return; }
-                proc.currentPresetName = name.trim();
+                proc.setPresetName (name.trim());
                 refreshHeader();
             });
         else if (r == 2)
-            askForName ("Rename preset", proc.currentPresetName, [this, current] (juce::String name)
+            askForName ("Rename preset", proc.getPresetName(), [this, current] (juce::String name)
             {
                 juce::String e;
                 if (! proc.library.rename (current, name, e)) { showError (e); return; }
-                proc.currentPresetName = name.trim();
+                proc.setPresetName (name.trim());
                 refreshHeader();
             });
         else if (r == 3)
             juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Delete preset",
-                                                "Move \"" + proc.currentPresetName + "\" to the Trash?", "Delete", "Cancel", this,
+                                                "Move \"" + proc.getPresetName() + "\" to the Trash?", "Delete", "Cancel", this,
                                                 juce::ModalCallbackFunction::create ([this, current] (int ok)
                                                 {
                                                     juce::String e;
@@ -723,14 +723,14 @@ void PowerKickEditor::showMainMenu()
         {
             chooser = std::make_unique<juce::FileChooser> ("Export PowerKick preset",
                                                            juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
-                                                               .getChildFile (juce::File::createLegalFileName (proc.currentPresetName) + ".pkpreset"),
+                                                               .getChildFile (juce::File::createLegalFileName (proc.getPresetName()) + ".pkpreset"),
                                                            "*.pkpreset");
             chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
                                   [this] (const juce::FileChooser& fc)
                                   {
                                       if (fc.getResult() == juce::File()) return;
                                       juce::String e;
-                                      if (! proc.library.exportTo (fc.getResult().withFileExtension ("pkpreset"), proc.currentPresetName,
+                                      if (! proc.library.exportTo (fc.getResult().withFileExtension ("pkpreset"), proc.getPresetName(),
                                                                    pk::captureSnapshot (proc.state), e))
                                           showError (e);
                                   });
@@ -767,7 +767,7 @@ void PowerKickEditor::showExportMenu()
 void PowerKickEditor::exportWav (bool stereo)
 {
     const auto suggested = juce::File::getSpecialLocation (juce::File::userDesktopDirectory)
-                               .getChildFile (juce::File::createLegalFileName ("PowerKick - " + proc.currentPresetName) + ".wav");
+                               .getChildFile (juce::File::createLegalFileName ("PowerKick - " + proc.getPresetName()) + ".wav");
     chooser = std::make_unique<juce::FileChooser> ("Export kick", suggested, "*.wav");
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
                           [this, stereo] (const juce::FileChooser& fc)
