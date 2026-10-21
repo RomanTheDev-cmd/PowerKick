@@ -13,6 +13,7 @@ struct Preset
     juce::String name, category;
     Snapshot values;
     juce::File file; // empty for factory presets
+    juce::String group; // sub-group inside the category (e.g. "Long", "Reese"), for the browser
     bool isFactory() const { return file == juce::File(); }
 };
 

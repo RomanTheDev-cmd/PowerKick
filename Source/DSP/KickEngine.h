@@ -320,12 +320,12 @@ private:
 
 //==============================================================================
 // Frequency-dependent stereo. The mono kick is split (phase-matched LR4) into
-// SUB < 120 Hz, BODY 120 Hz–1 kHz and HIGH > 1 kHz. SUB and BODY stay in the
-// centre. HIGH feeds a decorrelated, optionally delayed side signal:
+// SUB < 120 Hz, BODY 120-500 Hz and HIGH > 500 Hz. SUB and BODY stay in the
+// centre. The side signal S is built from HIGH: a decorrelated copy (WIDTH) plus a
+// real inter-channel time offset (DELAY):
 //   L = centre + S,  R = centre - S
-// so L + R contains no side at all: the mono sum never combs, whatever DELAY is.
-// WIDTH trades a little centre HIGH for side (equal power) so widening is not a
-// loudness boost.
+// so L + R contains no side at all: the mono sum is the mono kick, whatever WIDTH and
+// DELAY are, and never combs.
 class StereoEngine
 {
 public:
@@ -335,7 +335,7 @@ public:
         xoLow.set (120.0, sr);
         sideHp1.highpass (150.0, std::sqrt (0.5), sr);
         sideHp2.highpass (150.0, std::sqrt (0.5), sr);
-        xoHigh.set (1000.0, sr);
+        xoHigh.set (500.0, sr); // kick highs above 1 kHz are only ~-20 dB: widen from 500 Hz
         static constexpr double apMs[3] = { 1.31, 2.87, 4.73 };
         for (int i = 0; i < 3; ++i)
         {
@@ -356,8 +356,10 @@ public:
         delay.reset (targetDelay);
     }
 
-    void setTargets (double width01, double delayMs, bool snap = false) noexcept
+    void setTargets (double width01, double delayMs, double splitHz, bool snap = false) noexcept
     {
+        targetSplit = juce::jlimit (150.0, 2000.0, splitHz);
+        if (snap) { logSplit = std::log (targetSplit); applySplit (targetSplit); }
         targetWidth = juce::jlimit (0.0, 1.0, width01);
         targetDelay = juce::jlimit (0.0, 15.0, delayMs) * 0.001 * sr;
         if (snap) { width.reset (targetWidth); delay.reset (targetDelay); }
@@ -368,14 +370,21 @@ public:
 
     void tick (double x, double& l, double& r) noexcept
     {
+        if (--splitCountdown <= 0) // SPLIT glides (~20 ms) in fixed 32-sample steps: no clicks
+        {
+            splitCountdown = 32;
+            logSplit += (std::log (targetSplit) - logSplit) * (1.0 - std::exp (-32.0 / (0.02 * sr)));
+            const double f = std::exp (logSplit);
+            if (std::abs (f - appliedSplit) > 0.5) applySplit (f);
+        }
         double sub, rest, body, high;
         xoLow.split (x, sub, rest);
         xoHigh.split (rest, body, high);
         sub = xoHigh.allpass (sub);
 
-        // Schroeder allpass chain: decorrelated copy of HIGH (plus a trace of BODY,
-        // as in measured schranz kicks) with the same spectrum.
-        double d = high + 0.07 * body;
+        // WIDTH: a decorrelated copy of HIGH (plus a trace of BODY, as in measured schranz
+        // kicks), same spectrum, as the side signal.
+        double d = high + 0.15 * body;
         for (int i = 0; i < 3; ++i)
         {
             const double delayed = ap[i].read (apLen[i] - 1.0);
@@ -383,19 +392,28 @@ public:
             ap[i].push (v);
             d = delayed - 0.6 * v;
         }
-        haas.push (d);
+        // DELAY: a real time offset between the channels, built as a side signal
+        // (HIGH - HIGH delayed) / 2. Left gets the direct sound first, right the delayed copy;
+        // in the mono sum the term cancels exactly, so mono never combs. Zero at DELAY 0.
+        haas.push (high);
         const double w = width.next();
         const double dl = delay.next();
-        const double theta = w * 0.62;
-        // Extra high-pass on the side only (mono sum unaffected): no sub in the stereo field.
-        const double side = std::sin (theta) * sideHp2.tick (sideHp1.tick (haas.read (dl)));
-        const double centre = sub + body + std::cos (theta) * high;
+        const double haasSide = dl > 0.5 ? 0.5 * (high - haas.read (dl)) : 0.0;
+        // The centre is never reduced: the mono sum is exactly the mono kick at any WIDTH/DELAY.
+        // (The side of a kick is ~20 dB under the whole, so widening adds < 0.1 dB of level.)
+        // Extra high-pass on the side only: no sub in the stereo field.
+        const double side = w * 0.9 * sideHp2.tick (sideHp1.tick (d + 2.0 * haasSide));
+        const double centre = sub + body + high;
         l = centre + side;
         r = centre - side;
     }
 
 private:
+    void applySplit (double f) noexcept { xoHigh.set (f, sr); appliedSplit = f; }
+
     double sr = 48000.0, targetWidth = 0.0, targetDelay = 0.0;
+    double targetSplit = 500.0, logSplit = std::log (500.0), appliedSplit = 500.0;
+    int splitCountdown = 0;
     double apLen[3] {};
     LR4 xoLow, xoHigh;
     Biquad sideHp1, sideHp2;
@@ -482,7 +500,7 @@ private:
     {
         rumble.setBlockParams (p, bpm);
         eq.setTarget (p.charMode, p.character);
-        stereo.setTargets (p.width * 0.01, p.delayMs, firstBlock);
+        stereo.setTargets (p.width * 0.01, p.delayMs, p.splitHz, firstBlock);
 
         const auto& md = CharacterEq::mode (p.charMode);
         const double driveDb = 30.0 * p.drive + md.extraDriveDb * p.character;

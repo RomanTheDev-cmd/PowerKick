@@ -123,7 +123,7 @@ private:
 
     pk::ui::WaveformView waveform;
     pk::ui::Meter meter;
-    pk::ui::Knob tune, decay, punch, body, click, drive, character, rumble, output, width, delay;
+    pk::ui::Knob tune, decay, punch, body, click, drive, character, rumble, output, width, delay, split;
 
     std::unique_ptr<juce::FileChooser> chooser;
     bool soundDirty = true;

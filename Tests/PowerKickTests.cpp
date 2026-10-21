@@ -411,6 +411,57 @@ void testDriveSweepIsSmooth()
     }
 }
 
+double sideToMidDb (const juce::AudioBuffer<float>& a, double f1, double f2)
+{
+    std::vector<float> m ((size_t) a.getNumSamples()), sd ((size_t) a.getNumSamples());
+    for (int i = 0; i < a.getNumSamples(); ++i)
+    {
+        m[(size_t) i] = 0.5f * (a.getSample (0, i) + a.getSample (1, i));
+        sd[(size_t) i] = 0.5f * (a.getSample (0, i) - a.getSample (1, i));
+    }
+    return db (bandRms (sd.data(), (int) sd.size(), 48000, f1, f2)) - db (bandRms (m.data(), (int) m.size(), 48000, f1, f2));
+}
+
+void testStereoControlsAreAudible()
+{
+    // Roman: "WIDTH and DELAY seem to do nothing". WIDTH must give a clearly audible image on a
+    // normal kick, DELAY must add a real time offset; the mono sum stays untouched (other tests).
+    auto p = preset ("Hard Techno Core");
+    p.rumble = 0.0f;
+    p.width = 100.0f; p.delayMs = 0.0f;
+    const auto wide = renderKick (p, 48000.0, 140.0, true);
+    const double whole = sideToMidDb (wide, 20, 16000);
+    expect (whole >= -20.0, "WIDTH 100% is clearly audible on a kick (side " + juce::String (whole, 1) + " dB re mid)");
+    p.delayMs = 5.0f;
+    const auto delayed = renderKick (p, 48000.0, 140.0, true);
+    const double gain = sideToMidDb (delayed, 500, 16000) - sideToMidDb (wide, 500, 16000);
+    expect (gain >= 3.0, "DELAY 5 ms audibly adds width to the highs (+" + juce::String (gain, 1) + " dB side)");
+}
+
+void testStereoSplit()
+{
+    // SPLIT sets where widening starts (Roman's request): lower SPLIT, wider low-mids.
+    auto p = preset ("Hard Techno Core");
+    p.rumble = 0.0f; p.width = 100.0f; p.delayMs = 3.0f;
+    p.splitHz = 150.0f; // the lowest SPLIT
+    const auto lowest = renderKick (p, 48000.0, 140.0, true);
+    p.splitHz = 300.0f;
+    const auto low = renderKick (p, 48000.0, 140.0, true);
+    p.splitHz = 1500.0f;
+    const auto high = renderKick (p, 48000.0, 140.0, true);
+    const double diff = sideToMidDb (low, 400, 800) - sideToMidDb (high, 400, 800);
+    expect (diff >= 10.0, "SPLIT 300 Hz widens 400-800 Hz far more than SPLIT 1.5 kHz (" + juce::String (diff, 1) + " dB)");
+    // Side below 90 Hz (48 dB/oct measurement) relative to the whole mono kick.
+    std::vector<float> m ((size_t) lowest.getNumSamples()), sd ((size_t) lowest.getNumSamples());
+    for (int i = 0; i < lowest.getNumSamples(); ++i)
+    {
+        m[(size_t) i] = 0.5f * (lowest.getSample (0, i) + lowest.getSample (1, i));
+        sd[(size_t) i] = 0.5f * (lowest.getSample (0, i) - lowest.getSample (1, i));
+    }
+    const double sub = db (bandRmsSteep (sd.data(), (int) sd.size(), 48000, 20, 90)) - db (bandRms (m.data(), (int) m.size(), 48000, 20, 16000));
+    expect (sub < -50.0, "sub stays mono with a low SPLIT (" + juce::String (sub, 1) + " dB)");
+}
+
 void testVelocity()
 {
     auto p = preset ("Classic Punch");
@@ -544,6 +595,8 @@ int main (int argc, char** argv)
     testCharacterAudible();
     testPitchFall();
     testDriveSweepIsSmooth();
+    testStereoControlsAreAudible();
+    testStereoSplit();
     testSettledPitch();
     testGatedBody();
     testBodyTone();

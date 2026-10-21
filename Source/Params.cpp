@@ -46,7 +46,7 @@ const juce::StringArray& allParamIds()
                                          id::character, id::rumble, id::output, id::width, id::delay,
                                          id::driveMode, id::charMode, id::pitchDepth, id::pitchTime,
                                          id::clickType, id::clickTone, id::rumbleTime, id::rumbleSync,
-                                         id::velSens, id::keyTrack, id::bodyTone, id::pitchFall };
+                                         id::velSens, id::keyTrack, id::bodyTone, id::pitchFall, id::splitFreq };
     return ids;
 }
 
@@ -101,6 +101,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (unit (id::velSens, "Velocity Sens", 0.6f));
     layout.add (std::make_unique<APB> (juce::ParameterID { id::keyTrack, 1 }, "Key Track", false));
     layout.add (unit (id::bodyTone, "Body Tone", 0.5f));
+    {
+        juce::NormalisableRange<float> range (150.0f, 2000.0f);
+        range.setSkewForCentre (500.0f);
+        layout.add (std::make_unique<APF> (juce::ParameterID { id::splitFreq, 1 }, "Stereo Split", range, 500.0f,
+                                           Attr().withStringFromValueFunction ([] (float v, int)
+                                           { return v < 1000.0f ? juce::String (juce::roundToInt (v)) + " Hz" : juce::String (v / 1000.0f, 1) + " kHz"; })));
+    }
     layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchFall, 1 }, "Pitch Fall",
                                        juce::NormalisableRange<float> (0.0f, 24.0f, 0.01f), 1.4f, Attr().withLabel ("st")));
     return layout;
@@ -133,6 +140,7 @@ KickParams readParams (const juce::AudioProcessorValueTreeState& s)
     p.keyTrack = v (id::keyTrack) > 0.5f;
     p.bodyTone = v (id::bodyTone);
     p.pitchFall = v (id::pitchFall);
+    p.splitHz = v (id::splitFreq);
     return p;
 }
 }
