@@ -55,6 +55,45 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 };
 
+// A row of buttons bound to a choice (or on/off) parameter.
+class Segment : public juce::Component, private juce::AudioProcessorValueTreeState::Listener, private juce::AsyncUpdater
+{
+public:
+    Segment (juce::AudioProcessorValueTreeState&, const juce::String& paramId, const juce::StringArray& labels,
+             const juce::String& tooltip);
+    ~Segment() override;
+    void resized() override;
+
+private:
+    void parameterChanged (const juce::String&, float) override { triggerAsyncUpdate(); }
+    void handleAsyncUpdate() override;
+    juce::AudioProcessorValueTreeState& state;
+    juce::String paramId;
+    juce::OwnedArray<juce::TextButton> buttons;
+};
+
+// Deeper voicing, hidden behind the ADVANCED button: pitch envelope, body, drive dynamics,
+// length and engine options. Every control is neutral in the factory presets unless used.
+class AdvancedPanel : public juce::Component
+{
+public:
+    explicit AdvancedPanel (juce::AudioProcessorValueTreeState&);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void refresh(); // enables KEY ROOT only with key tracking on
+
+    std::function<void()> onClose;
+
+private:
+    juce::AudioProcessorValueTreeState& state;
+    Knob pitchDepth, pitchTime, pitchCurve, pitchFall, keyRoot, clickTone, rumbleTime;
+    Knob bodyTone, subLevel, startPhase, driveEnv, velDrive, modDrive, velSens;
+    Segment beatLength, rumbleMode, choke, oversample;
+    juce::TextButton closeButton { "CLOSE" };
+    struct Label { juce::String text; juce::Rectangle<int> area; };
+    std::vector<Label> labels;
+};
+
 class WaveformView : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -118,12 +157,13 @@ private:
 
     juce::TextButton prevButton { "<" }, nextButton { ">" }, presetButton, aButton { "A" }, bButton { "B" },
         copyButton { "A>B" }, menuButton { "..." }, previewButton { "PREVIEW" }, exportButton { "EXPORT WAV" },
-        variationButton { "VARIATION" }, undoButton { "UNDO" };
+        variationButton { "VARIATION" }, undoButton { "UNDO" }, advancedButton { "ADVANCED" };
     std::array<juce::TextButton, 5> charButtons;
 
     pk::ui::WaveformView waveform;
     pk::ui::Meter meter;
     pk::ui::Knob tune, decay, punch, body, click, drive, character, rumble, output, width, delay, split;
+    pk::ui::AdvancedPanel advanced;
 
     std::unique_ptr<juce::FileChooser> chooser;
     bool soundDirty = true;

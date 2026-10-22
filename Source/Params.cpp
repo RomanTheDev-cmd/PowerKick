@@ -90,10 +90,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
 
     layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchDepth, 1 }, "Pitch Depth",
                                        juce::NormalisableRange<float> (0.0f, 48.0f, 0.1f), 39.8f,
-                                       Attr().withLabel ("st")));
+                                       Attr().withLabel ("st").withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " st"; })));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchTime, 1 }, "Pitch Time",
                                        juce::NormalisableRange<float> (4.0f, 150.0f, 0.1f, 0.5f), 54.7f,
-                                       Attr().withLabel ("ms")));
+                                       Attr().withLabel ("ms").withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " ms"; })));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::clickType, 1 }, "Click Type",
                                        juce::StringArray { "Soft", "Sharp", "Metal", "909 Noise", "FM Blip" }, 2));
     layout.add (unit (id::clickTone, "Click Tone", 1.0f));
@@ -111,7 +111,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                            { return v < 1000.0f ? juce::String (juce::roundToInt (v)) + " Hz" : juce::String (v / 1000.0f, 1) + " kHz"; })));
     }
     layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchFall, 1 }, "Pitch Fall",
-                                       juce::NormalisableRange<float> (0.0f, 24.0f, 0.01f), 1.4f, Attr().withLabel ("st")));
+                                       juce::NormalisableRange<float> (0.0f, 24.0f, 0.01f), 1.4f,
+                                       Attr().withLabel ("st").withStringFromValueFunction ([] (float v, int) { return juce::String (v, 1) + " st"; })));
     // ADVANCED (neutral defaults)
     layout.add (std::make_unique<APC> (juce::ParameterID { id::beatLength, 1 }, "Beat Length", juce::StringArray { "Off", "1/4", "1/8", "1/16" }, 0));
     layout.add (unit (id::subLevel, "Sub Layer", 0.0f));

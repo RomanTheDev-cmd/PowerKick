@@ -223,8 +223,37 @@ void testEditor()
 }
 }
 
-int main()
+// --snapshot DIR: renders the editor (main view and ADVANCED open) to PNG files for a visual check.
+int snapshot (const juce::File& dir)
 {
+    juce::ScopedJuceInitialiser_GUI gui;
+    PowerKickProcessor p;
+    p.prepareToPlay (48000, 512);
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+    dir.createDirectory();
+    auto save = [&] (const juce::String& name, float scale)
+    {
+        const auto img = ed->createComponentSnapshot (ed->getLocalBounds(), true, scale);
+        auto f = dir.getChildFile (name);
+        f.deleteFile();
+        juce::FileOutputStream os (f);
+        juce::PNGImageFormat().writeImageToStream (img, os);
+    };
+    save ("main.png", 1.0f);
+    for (auto* c : ed->getChildren())
+        if (auto* b = dynamic_cast<juce::TextButton*> (c); b != nullptr && b->getButtonText() == "ADVANCED")
+            b->setToggleState (true, juce::sendNotification);
+    save ("advanced.png", 1.0f);
+    ed->setBoundsConstrained ({ 0, 0, 736, 528 });
+    save ("advanced_small.png", 1.0f);
+    ed.reset();
+    return 0;
+}
+
+int main (int argc, char** argv)
+{
+    if (argc > 2 && juce::String (argv[1]) == "--snapshot")
+        return snapshot (juce::File (juce::String::fromUTF8 (argv[2])));
     testDefaultsMatchDefaultPreset();
     testStateRoundTrip();
     testLegacyProjectMigration();
