@@ -51,6 +51,13 @@ double rmsOf (const std::vector<float>& v)
     return std::sqrt (sum / (double) std::max<size_t> (1, v.size()));
 }
 
+double rms (const juce::AudioBuffer<float>& b, int from, int to)
+{
+    double s = 0;
+    for (int i = from; i < std::min (to, b.getNumSamples()); ++i) s += (double) b.getSample (0, i) * b.getSample (0, i);
+    return std::sqrt (s / std::max (1, to - from));
+}
+
 double db (double g) { return 20.0 * std::log10 (std::max (g, 1.0e-12)); }
 
 // Energy of x in [f1, f2] via a 4th-order band filter (two LR4 splits).
@@ -488,6 +495,152 @@ void testStereoSplit()
     expect (sub < -50.0, "sub stays mono with a low SPLIT (" + juce::String (sub, 1) + " dB)");
 }
 
+// ---- ADVANCED features: each is neutral by default, so the 300 presets keep their sound.
+struct Fingerprint { const char* name; int length; double energy, s0, s1; };
+const Fingerprint fingerprints[] = {
+{ "Hard Techno Core", 36156, 4967.8316019198019, 0.0219133236, 0.516940773 },
+{ "Classic Punch", 34197, 3540.8241718909485, -0.747925818, -0.168373674 },
+{ "Classic Schranz", 32195, 2166.5017299954002, -0.530174553, -0.186853409 },
+{ "Industrial Rumble", 34022, 3810.2010239803653, 0.267664284, 0.308782578 },
+{ "Gabba Lite", 25768, 1774.7198351118495, 0.233158618, -0.214758933 },
+};
+
+void testExistingSoundUnchanged()
+{
+    for (const auto& f : fingerprints)
+    {
+        const auto a = renderKick (preset (f.name), 48000.0, 140.0, true);
+        double e = 0;
+        for (int c = 0; c < 2; ++c) for (int i = 0; i < a.getNumSamples(); ++i) e += (double) a.getSample (c, i) * a.getSample (c, i);
+        const bool same = a.getNumSamples() == f.length && std::abs (e - f.energy) <= 1.0e-9 * f.energy
+                          && std::abs (a.getSample (0, 2000) - f.s0) < 1.0e-7 && std::abs (a.getSample (1, 9000) - f.s1) < 1.0e-7;
+        expect (same, juce::String (f.name) + ": sound unchanged by the new (neutral) features");
+    }
+}
+
+// Band level inside [t0, t1]: the filters run from the start of the signal (warmed up), only
+// the window is measured -- starting cold mid-signal would leak a step transient into the band.
+double segDb (const juce::AudioBuffer<float>& a, double t0, double t1, double f1, double f2)
+{
+    const int i0 = (int) (t0 * 48000), i1 = std::min (a.getNumSamples(), (int) (t1 * 48000));
+    dsp::LR4 lo, hi;
+    lo.set (f1, 48000); hi.set (f2, 48000);
+    double sum = 0;
+    for (int i = 0; i < i1; ++i)
+    {
+        double x1, x2, y1, y2;
+        lo.split (a.getSample (0, i), x1, x2);
+        hi.split (x2, y1, y2);
+        if (i >= i0) sum += y1 * y1;
+    }
+    return db (std::sqrt (sum / std::max (1, i1 - i0)));
+}
+
+void testAdvancedFeatures()
+{
+    auto base = preset ("Classic Schranz");
+    base.rumble = 0.0f; base.outputDb = -12.0f; base.width = 0.0f;
+    // Attack features are judged on a clean kick: heavy clipping would mask any attack detail.
+    auto clean = base; clean.drive = 0.1f; clean.driveMode = DriveMode::saturate; clean.character = 0.0f;
+
+    // Beat length: the kick ends within a quarter note at 150 BPM.
+    { auto p = base; p.decay = 0.9f;
+      const auto off = renderKick (p, 48000.0, 150.0, false);
+      p.beatLength = 1;
+      const auto on = renderKick (p, 48000.0, 150.0, false);
+      expect (on.getNumSamples() <= (int) (0.42 * 48000) && off.getNumSamples() > (int) (0.8 * 48000),
+              "BEAT LENGTH 1/4 ends the kick within a beat (" + juce::String (on.getNumSamples() / 48.0, 0) + " ms)"); }
+
+    // Sub layer: more clean low end in the body, top unchanged.
+    { auto p = base; const auto a = renderKick (p, 48000.0, 140.0, false);
+      p.subLevel = 1.0f; const auto b = renderKick (p, 48000.0, 140.0, false);
+      expect (segDb (b, 0.1, 0.3, 35, 80) - segDb (a, 0.1, 0.3, 35, 80) >= 3.0, "SUB LAYER adds clean low end (" + juce::String (segDb (b, 0.1, 0.3, 35, 80) - segDb (a, 0.1, 0.3, 35, 80), 2) + " dB)");
+      expect (std::abs (segDb (b, 0.1, 0.3, 1000, 8000) - segDb (a, 0.1, 0.3, 1000, 8000)) < 1.0, "SUB LAYER leaves the top alone (" + juce::String (segDb (b, 0.1, 0.3, 1000, 8000) - segDb (a, 0.1, 0.3, 1000, 8000), 2) + " dB)"); }
+
+    // New click types are audible and different from each other.
+    { auto p = clean; p.click = 0.0f; const auto none = renderKick (p, 48000.0, 140.0, false);
+      p.click = 0.9f; p.clickType = ClickType::noise909; const auto n9 = renderKick (p, 48000.0, 140.0, false);
+      p.clickType = ClickType::fmBlip; const auto fm = renderKick (p, 48000.0, 140.0, false);
+      expect (segDb (n9, 0, 0.01, 2000, 10000) - segDb (none, 0, 0.01, 2000, 10000) > 6.0, "909 NOISE click is audible (" + juce::String (segDb (n9, 0, 0.01, 2000, 10000) - segDb (none, 0, 0.01, 2000, 10000), 2) + ")");
+      expect (segDb (fm, 0, 0.01, 1500, 6000) - segDb (none, 0, 0.01, 1500, 6000) > 6.0, "FM BLIP click is audible (" + juce::String (segDb (fm, 0, 0.01, 1500, 6000) - segDb (none, 0, 0.01, 1500, 6000), 2) + ")");
+      expect (std::abs ((segDb (n9, 0, 0.01, 5000, 12000) - segDb (n9, 0, 0.01, 700, 2000))
+                        - (segDb (fm, 0, 0.01, 5000, 12000) - segDb (fm, 0, 0.01, 700, 2000))) > 3.0, "the two new clicks differ"); }
+
+    // Start phase changes the first cycle without changing the level.
+    { auto p = clean; p.punch = 0.0f; const auto a = renderKick (p, 48000.0, 140.0, false);
+      p.startPhase = 1.0f; const auto b = renderKick (p, 48000.0, 140.0, false);
+      double dsum = 0, asum = 0;
+      for (int i = 0; i < 96; ++i) { dsum += std::pow (a.getSample (0, i) - b.getSample (0, i), 2.0); asum += std::pow (a.getSample (0, i), 2.0); }
+      expect (std::sqrt (dsum / std::max (asum, 1e-20)) > 0.3, "START PHASE changes the first 2 ms (" + juce::String (std::sqrt (dsum / std::max (asum, 1e-20)), 2) + ")");
+      expect (std::abs (segDb (a, 0.02, 0.2, 20, 500) - segDb (b, 0.02, 0.2, 20, 500)) < 1.0, "START PHASE keeps the body level"); }
+
+    // Drive attack: more harmonics in the first 20 ms only.
+    { auto p = clean; p.drive = 0.3f; const auto a = renderKick (p, 48000.0, 140.0, false);
+      p.driveEnv = 1.0f; const auto b = renderKick (p, 48000.0, 140.0, false);
+      expect (segDb (b, 0, 0.02, 1000, 4000) - segDb (a, 0, 0.02, 1000, 4000) >= 3.0, "DRIVE ATTACK adds bite to the attack (" + juce::String (segDb (b, 0, 0.02, 1000, 4000) - segDb (a, 0, 0.02, 1000, 4000), 2) + ")");
+      expect (std::abs (segDb (b, 0.15, 0.3, 1000, 4000) - segDb (a, 0.15, 0.3, 1000, 4000)) < 1.5, "DRIVE ATTACK leaves the tail"); }
+
+    // Velocity -> drive: soft notes get cleaner than loud ones.
+    { auto tilt = [] (const juce::AudioBuffer<float>& x) { return segDb (x, 0.03, 0.2, 1000, 4000) - segDb (x, 0.03, 0.2, 30, 120); };
+      auto p = base; p.drive = 0.5f; p.velSens = 0.0f;
+      const double plain = tilt (renderKick (p, 48000.0, 140.0, false, 1.0f)) - tilt (renderKick (p, 48000.0, 140.0, false, 0.3f));
+      p.velDrive = 1.0f;
+      const double linked = tilt (renderKick (p, 48000.0, 140.0, false, 1.0f)) - tilt (renderKick (p, 48000.0, 140.0, false, 0.3f));
+      expect (linked - plain >= 2.0, "VELOCITY DRIVE: soft notes are cleaner (" + juce::String (linked - plain, 1) + " dB)"); }
+
+    // Oversampling 2x/4x/8x: same sound in the musical range, all finite.
+    { auto p = base; double lvl[3];
+      for (int i = 0; i < 3; ++i) { p.oversampleIndex = i; const auto a = renderKick (p, 48000.0, 140.0, false);
+                                    lvl[i] = segDb (a, 0, 0.2, 30, 2000); expect (stats (a).finite && stats (a).peak <= 1.0, "oversampling " + juce::String (2 << i) + "x renders"); }
+      expect (std::abs (lvl[0] - lvl[1]) < 1.0 && std::abs (lvl[2] - lvl[1]) < 1.0, "oversampling keeps the sound"); }
+
+    // Pitch curve: a rounder sweep is clearly higher at 30 ms.
+    { auto p = base; p.punch = 0.0f; p.click = 0.0f; p.drive = 0.0f; p.character = 0.0f;
+      const auto a = renderKick (p, 48000.0, 140.0, false);
+      p.pitchCurve = 1.0f; const auto b = renderKick (p, 48000.0, 140.0, false);
+      expect (12.0 * std::log2 (pitchAt (b, 0.03, 48000) / pitchAt (a, 0.03, 48000)) >= 2.0, "PITCH CURVE changes the sweep"); }
+
+    // Key root: with key tracking, the root note plays at TUNE.
+    { auto p = base; p.keyTrack = true; p.keyRoot = 48; p.punch = 0.0f; p.click = 0.0f; p.drive = 0.0f; p.character = 0.0f; p.pitchFall = 0.0f;
+      dsp::KickEngine e; e.prepare (48000, 512);
+      juce::AudioBuffer<float> out (2, 48000); juce::MidiBuffer on, none; on.addEvent (juce::MidiMessage::noteOn (1, 48, 1.0f), 0);
+      for (int pos = 0; pos < 48000; pos += 512) e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), std::min (512, 48000 - pos), pos == 0 ? on : none, 0, p, 140, false);
+      expect (std::abs (pitchAt (out, 0.25, 48000) - baseFrequency (p.tune)) < 1.0, "KEY ROOT plays TUNE on the root note"); }
+
+    // Mod wheel -> drive.
+    { auto p = base; p.drive = 0.2f; p.modDrive = 1.0f;
+      auto run = [&p] (int cc)
+      { dsp::KickEngine e; e.prepare (48000, 512); juce::AudioBuffer<float> out (2, 24576); juce::MidiBuffer m;
+        m.addEvent (juce::MidiMessage::controllerEvent (1, 1, cc), 0); m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 1);
+        juce::MidiBuffer none;
+        for (int pos = 0; pos < 24576; pos += 512) e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 512, pos == 0 ? m : none, 0, p, 140, false);
+        return segDb (out, 0.03, 0.2, 1000, 4000) - segDb (out, 0.03, 0.2, 30, 120); };
+      expect (run (127) - run (0) >= 3.0, "MOD WHEEL DRIVE adds drive"); }
+
+    // Choke: the previous hit is gone faster after a retrigger.
+    { auto run = [] (bool choke)
+      { auto p = preset ("Deep Drop"); p.choke = choke; p.outputDb = -12.0f; p.click = 0.0f; p.velSens = 1.0f; p.rumble = 0.0f;
+        p.drive = 0.0f; p.character = 0.0f; // drive would lift the quiet fade back up and hide it
+        dsp::KickEngine e; e.prepare (48000, 64); juce::AudioBuffer<float> out (2, 9600);
+        for (int pos = 0; pos < 9600; pos += 64)
+        { juce::MidiBuffer m; // the second hit is almost silent: the window then shows only the first hit's tail
+          if (pos == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+          if (pos == 4800) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 1), 0); // velocity 1/127 (0 would be a note-off)
+          e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 64, m, 0, p, 140, false); }
+        return rms (out, 4800 + 96, 4800 + 144); };
+      expect (run (true) < run (false) * 0.8, "CHOKE cuts the previous hit faster (" + juce::String (run (true), 4) + " vs " + juce::String (run (false), 4) + ")"); }
+
+    // Reverb rumble: smoother tail than the comb rumble, sub still mono.
+    { auto ripple = [] (const juce::AudioBuffer<float>& x)
+      { std::vector<double> v; for (int i = (int) (0.35 * 48000); i + 480 < std::min (x.getNumSamples(), (int) (0.8 * 48000)); i += 480) v.push_back (db (rms (x, i, i + 480)));
+        double m = 0; for (double d : v) m += d; m /= (double) v.size(); double q = 0; for (double d : v) q += (d - m) * (d - m); return std::sqrt (q / (double) v.size()); };
+      auto p = preset ("Industrial Rumble"); p.rumble = 0.8f; p.outputDb = -12.0f;
+      const auto classic = renderKick (p, 48000.0, 140.0, true);
+      p.rumbleMode = 1; const auto reverb = renderKick (p, 48000.0, 140.0, true);
+      expect (ripple (reverb) < ripple (classic) - 0.5, "REVERB rumble tail is smoother (" + juce::String (ripple (reverb), 2) + " vs " + juce::String (ripple (classic), 2) + " dB)");
+      expect (stats (reverb).finite && stats (reverb).peak <= 1.0, "REVERB rumble renders cleanly"); }
+}
+
 void testVelocity()
 {
     auto p = preset ("Classic Punch");
@@ -519,7 +672,9 @@ void testPresetRoundTripAndWav()
     Preset back;
     juce::String err;
     expect (presetFromXml (xml, back, err), "preset XML parses: " + err);
-    expect (back.values.size() == s.size(), "preset keeps every parameter");
+    bool all = true;
+    for (const auto& [k, v] : s) all = all && back.values.count (k) && std::abs (back.values.at (k) - v) < 1.0e-4f;
+    expect (all, "preset keeps every parameter");
     expect (std::abs (back.values[id::width] - 73.5f) < 1e-4f && std::abs (back.values[id::delay] - 4.25f) < 1e-4f,
             "preset stores Stereo Width and Delay");
     expect (back.name == juce::String::fromUTF8 ("Ünïcode Test"), "preset name round-trips");
@@ -563,6 +718,19 @@ void testPresetRoundTripAndWav()
 int main (int argc, char** argv)
 {
     // No GUI initialisation: the tests are pure DSP and file I/O (and run under Wine).
+    if (argc > 1 && juce::String (argv[1]) == "--fingerprint")
+    {
+        // Sound fingerprints used by testExistingSoundUnchanged (energy, peak, two sample values).
+        for (const char* name : { "Hard Techno Core", "Classic Punch", "Classic Schranz", "Industrial Rumble", "Gabba Lite" })
+        {
+            const auto a = renderKick (preset (name), 48000.0, 140.0, true);
+            double e = 0;
+            for (int c = 0; c < 2; ++c) for (int i = 0; i < a.getNumSamples(); ++i) e += (double) a.getSample (c, i) * a.getSample (c, i);
+            std::printf ("{ \"%s\", %d, %.17g, %.9g, %.9g },\n", name, a.getNumSamples(), e,
+                         (double) a.getSample (0, 2000), (double) a.getSample (1, 9000));
+        }
+        return 0;
+    }
     if (argc > 1 && juce::String (argv[1]) == "--dump-presets")
     {
         // name|category|id=value ... for Tools/fit_kicks.py
@@ -637,6 +805,8 @@ int main (int argc, char** argv)
     testDriveSweepIsSmooth();
     testStereoControlsAreAudible();
     testStereoSplit();
+    testExistingSoundUnchanged();
+    testAdvancedFeatures();
     testSettledPitch();
     testGatedBody();
     testBodyTone();

@@ -33,11 +33,23 @@ namespace id
     inline constexpr const char* bodyTone   = "bodyTone";
     inline constexpr const char* pitchFall  = "pitchFall";
     inline constexpr const char* splitFreq  = "splitFreq";
+    // ADVANCED (all neutral by default: existing presets keep their sound)
+    inline constexpr const char* beatLength = "beatLength";
+    inline constexpr const char* subLevel   = "subLevel";
+    inline constexpr const char* startPhase = "startPhase";
+    inline constexpr const char* driveEnv   = "driveEnv";
+    inline constexpr const char* velDrive   = "velDrive";
+    inline constexpr const char* oversample = "oversample";
+    inline constexpr const char* pitchCurve = "pitchCurve";
+    inline constexpr const char* keyRoot    = "keyRoot";
+    inline constexpr const char* modDrive   = "modDrive";
+    inline constexpr const char* choke      = "choke";
+    inline constexpr const char* rumbleMode = "rumbleMode";
 }
 
 enum class DriveMode { saturate, clip, industrial };
 enum class CharMode  { deep, punchy, dark, hard, raw };
-enum class ClickType { soft, sharp, metal };
+enum class ClickType { soft, sharp, metal, noise909, fmBlip };
 
 // Plain snapshot of every sound parameter in real units.
 struct KickParams
@@ -66,7 +78,18 @@ struct KickParams
     bool keyTrack = false;
     float pitchFall = 0.0f;     // 0..24 st: slow pitch fall through the tail (measured kicks fall 2-4 st at 100-250 ms)
     float bodyTone = 1.0f;
-    float splitHz = 500.0f;     // stereo widening above this frequency (150..2000 Hz)      // 0..1: mid scoop of the body after the attack (0 = -24 dB at ~1 kHz, 1 = none)
+    float splitHz = 500.0f;     // stereo widening above this frequency (150..2000 Hz)
+    int beatLength = 0;         // 0 off, 1 = 1/4, 2 = 1/8, 3 = 1/16: the kick ends within that note value
+    float subLevel = 0.0f;      // clean sine sub layer under the driven body
+    float startPhase = 0.0f;    // 0..1 = 0..90 degrees body start phase ("push")
+    float driveEnv = 0.0f;      // extra drive on the attack, up to +24 dB (decays over ~30 ms)
+    float velDrive = 0.0f;      // velocity -> drive
+    int oversampleIndex = 1;    // 0 = 2x, 1 = 4x, 2 = 8x
+    float pitchCurve = 0.0f;    // 0 exponential sweep .. 1 slower, rounder sweep
+    int keyRoot = 60;           // key tracking root note
+    float modDrive = 0.0f;      // mod wheel -> drive
+    bool choke = false;         // a new hit cuts the previous one in 1 ms (instead of 4 ms)
+    int rumbleMode = 0;         // 0 classic comb rumble, 1 diffuse reverb rumble      // 0..1: mid scoop of the body after the attack (0 = -24 dB at ~1 kHz, 1 = none)
 };
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
