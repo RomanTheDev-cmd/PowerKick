@@ -222,6 +222,157 @@ void Knob::mouseUp (const juce::MouseEvent& e)
 }
 
 //==============================================================================
+Segment::Segment (juce::AudioProcessorValueTreeState& s, const juce::String& pid, const juce::StringArray& labels,
+                  const juce::String& tooltip)
+    : state (s), paramId (pid)
+{
+    for (int i = 0; i < labels.size(); ++i)
+    {
+        auto* b = buttons.add (new juce::TextButton (labels[i]));
+        b->setTooltip (tooltip);
+        b->onClick = [this, i]
+        {
+            if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (state.getParameter (paramId)))
+            {
+                p->beginChangeGesture();
+                p->setValueNotifyingHost (p->convertTo0to1 ((float) i));
+                p->endChangeGesture();
+            }
+        };
+        addAndMakeVisible (b);
+    }
+    state.addParameterListener (paramId, this);
+    handleAsyncUpdate();
+}
+
+Segment::~Segment() { state.removeParameterListener (paramId, this); }
+
+void Segment::resized()
+{
+    auto r = getLocalBounds();
+    const int w = r.getWidth() / std::max (1, buttons.size());
+    for (auto* b : buttons)
+        b->setBounds (r.removeFromLeft (w).reduced (2, 0));
+}
+
+void Segment::handleAsyncUpdate()
+{
+    const int index = juce::roundToInt (state.getRawParameterValue (paramId)->load());
+    for (int i = 0; i < buttons.size(); ++i)
+        buttons[i]->setToggleState (i == index, juce::dontSendNotification);
+}
+
+//==============================================================================
+AdvancedPanel::AdvancedPanel (juce::AudioProcessorValueTreeState& s)
+    : state (s),
+      pitchDepth (s, pk::id::pitchDepth, "DEPTH", "How far above TUNE the body starts (semitones). Less = less laser, more kick", true),
+      pitchTime (s, pk::id::pitchTime, "TIME", "How fast the pitch drops to TUNE. Long times sound like a zap or a tom", true),
+      pitchCurve (s, pk::id::pitchCurve, "CURVE", "Shape of the drop: 0 = fast exponential, 1 = rounder and slower", true),
+      pitchFall (s, pk::id::pitchFall, "FALL", "Slow extra fall through the tail, as measured on hard-techno kicks", true),
+      keyRoot (s, pk::id::keyRoot, "KEY ROOT", "With key tracking on: the MIDI note that plays the kick at TUNE", true),
+      clickTone (s, pk::id::clickTone, "TONE", "Colour of the click: darker <-> brighter", true),
+      rumbleTime (s, pk::id::rumbleTime, "TIME", "Length and darkness of the rumble tail", true),
+      bodyTone (s, pk::id::bodyTone, "TONE", "Mid scoop of the body after the attack: 0 = deep scoop, 100 = none", true),
+      subLevel (s, pk::id::subLevel, "SUB", "Clean sine under the driven body, same pitch, never distorted", true),
+      startPhase (s, pk::id::startPhase, "PHASE", "Start of the body waveform (0-90 degrees): more push on the first cycle", true),
+      driveEnv (s, pk::id::driveEnv, "ATTACK", "Extra drive on the attack (up to +24 dB), fading over about 30 ms", true),
+      velDrive (s, pk::id::velDrive, "VELOCITY", "Softer notes drive less", true),
+      modDrive (s, pk::id::modDrive, "MOD", "Mod wheel adds drive (up to +24 dB)", true),
+      velSens (s, pk::id::velSens, "VELOCITY", "How much note velocity changes the level and the click", true),
+      beatLength (s, pk::id::beatLength, { "OFF", "1/4", "1/8", "1/16" }, "The kick ends within this note value at the current tempo"),
+      rumbleMode (s, pk::id::rumbleMode, { "CLASSIC", "REVERB" }, "Rumble engine: tuned comb tail or a diffuse dark reverb"),
+      choke (s, pk::id::choke, { "OFF", "ON" }, "A new hit cuts the previous one in 1 ms instead of 4 ms (tight rolls)"),
+      oversample (s, pk::id::oversample, { "2x", "4x", "8x" }, "Oversampling of the drive: higher = cleaner top, more CPU")
+{
+    for (auto* c : std::initializer_list<juce::Component*> { &pitchDepth, &pitchTime, &pitchCurve, &pitchFall, &keyRoot, &clickTone,
+                                                            &rumbleTime, &bodyTone, &subLevel, &startPhase, &driveEnv, &velDrive,
+                                                            &modDrive, &velSens, &beatLength, &rumbleMode, &choke, &oversample,
+                                                            &closeButton })
+        addAndMakeVisible (c);
+    closeButton.setTooltip ("Back to the main controls");
+    closeButton.onClick = [this] { if (onClose) onClose(); };
+}
+
+void AdvancedPanel::refresh()
+{
+    keyRoot.slider.setEnabled (state.getRawParameterValue (pk::id::keyTrack)->load() > 0.5f);
+}
+
+void AdvancedPanel::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    g.setColour (juce::Colours::black.withAlpha (0.35f));
+    g.fillRoundedRectangle (r.translated (0, 4), 14.0f);
+    g.setGradientFill (juce::ColourGradient (colours::panelTop, 0, r.getY(), colours::panelBot, 0, r.getBottom(), false));
+    g.fillRoundedRectangle (r, 14.0f);
+    g.setColour (colours::accent.withAlpha (0.35f));
+    g.drawRoundedRectangle (r.reduced (0.5f), 14.0f, 1.0f);
+    const float s = getWidth() / 872.0f;
+    g.setFont (uiFont (11.0f * s, true).withExtraKerningFactor (0.18f));
+    for (const auto& l : labels)
+    {
+        g.setColour (l.text == "ADVANCED" ? colours::text : colours::dim);
+        g.drawText (l.text, l.area, juce::Justification::centredLeft);
+        if (l.text != "ADVANCED" && l.area.getX() < getWidth() * 0.72f) // group captions get a hairline
+        {
+            const int tw = juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), l.text) + juce::roundToInt (8 * s);
+            g.setColour (colours::line);
+            g.fillRect (juce::Rectangle<int> (l.area.getX() + tw, l.area.getCentreY(), std::max (0, l.area.getWidth() - tw), 1));
+        }
+    }
+    // Hairline between the knob grid and the switches.
+    g.setColour (colours::line);
+    g.fillRect (juce::Rectangle<float> ((float) getWidth() * 0.735f, 40.0f * s, 1.0f, (float) getHeight() - 56.0f * s));
+}
+
+void AdvancedPanel::resized()
+{
+    const float s = getWidth() / 872.0f;
+    auto S = [s] (float v) { return juce::roundToInt (v * s); };
+    labels.clear();
+    auto r = getLocalBounds().reduced (S (16), S (10));
+    auto top = r.removeFromTop (S (24));
+    closeButton.setBounds (top.removeFromRight (S (72)).withSizeKeepingCentre (S (72), S (22)));
+    labels.push_back ({ "ADVANCED", top });
+
+    auto grid = r.removeFromLeft (juce::roundToInt (r.getWidth() * 0.735f) - S (16));
+    r.removeFromLeft (S (28));
+    // Two rows of seven knobs under group captions.
+    struct Group { const char* caption; std::vector<Knob*> knobs; };
+    const std::vector<Group> rowsA { { "PITCH", { &pitchDepth, &pitchTime, &pitchCurve, &pitchFall, &keyRoot } },
+                                     { "CLICK / RUMBLE", { &clickTone, &rumbleTime } } };
+    const std::vector<Group> rowsB { { "BODY", { &bodyTone, &subLevel, &startPhase } },
+                                     { "DRIVE", { &driveEnv, &velDrive, &modDrive } },
+                                     { "LEVEL", { &velSens } } };
+    const int rowH = grid.getHeight() / 2;
+    const int colW = grid.getWidth() / 7;
+    for (const auto* row : { &rowsA, &rowsB })
+    {
+        auto band = grid.removeFromTop (rowH);
+        auto captions = band.removeFromTop (S (18));
+        for (const auto& gr : *row)
+        {
+            const int w = colW * (int) gr.knobs.size();
+            labels.push_back ({ gr.caption, captions.removeFromLeft (w).reduced (S (6), 0) });
+            auto cells = band.removeFromLeft (w);
+            for (auto* k : gr.knobs)
+                k->setBounds (cells.removeFromLeft (colW).reduced (S (3), S (2)));
+        }
+    }
+
+    // Switches, each with its caption above.
+    const char* captions[4] = { "LENGTH (BEATS)", "RUMBLE MODE", "CHOKE", "OVERSAMPLING" };
+    Segment* segs[4] = { &beatLength, &rumbleMode, &choke, &oversample };
+    const int slot = r.getHeight() / 4;
+    for (int i = 0; i < 4; ++i)
+    {
+        auto cell = r.removeFromTop (slot).reduced (0, S (6));
+        labels.push_back ({ captions[i], cell.removeFromTop (S (16)) });
+        segs[i]->setBounds (cell.withSizeKeepingCentre (cell.getWidth(), std::min (cell.getHeight(), S (26))).withY (cell.getY() + S (2)));
+    }
+}
+
+//==============================================================================
 WaveformView::WaveformView (PowerKickProcessor& p) : proc (p)
 {
     setTooltip ("Drag this waveform into your DAW to drop the kick as a 24-bit WAV");
@@ -380,7 +531,8 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
       output (p.state, pk::id::output, "OUTPUT", "Output level"),
       width (p.state, pk::id::width, "WIDTH", "Stereo width above SPLIT; the sub always stays mono", true),
       delay (p.state, pk::id::delay, "DELAY", "Time offset between left and right in the widened part (needs WIDTH above 0)", true),
-      split (p.state, pk::id::splitFreq, "SPLIT", "Widening starts above this frequency; the sub below 120 Hz always stays mono", true)
+      split (p.state, pk::id::splitFreq, "SPLIT", "Widening starts above this frequency; the sub below 120 Hz always stays mono", true),
+      advanced (p.state)
 {
     setLookAndFeel (&lnf);
     tune.slider.getProperties().set ("bipolar", true);
@@ -392,7 +544,7 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
     for (auto* k : { &tune, &decay, &punch, &body, &click, &drive, &character, &rumble, &output, &width, &delay, &split })
         addAndMakeVisible (*k);
     for (auto* b : { &prevButton, &nextButton, &presetButton, &aButton, &bButton, &copyButton, &menuButton, &previewButton,
-                     &exportButton, &variationButton, &undoButton })
+                     &exportButton, &variationButton, &undoButton, &advancedButton })
         addAndMakeVisible (*b);
     addAndMakeVisible (waveform);
     addAndMakeVisible (meter);
@@ -409,6 +561,7 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
         b.onClick = [this, i] { setChoice (proc.state, pk::id::charMode, i); };
         addAndMakeVisible (b);
     }
+    addChildComponent (advanced); // last: lies on top of the knob area when open
 
     prevButton.setTooltip ("Previous preset");
     nextButton.setTooltip ("Next preset");
@@ -421,6 +574,10 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
     exportButton.setTooltip ("Save the kick as a 24-bit WAV");
     variationButton.setTooltip ("New timbre variation at the same key and loudness");
     undoButton.setTooltip ("Undo the last variation");
+    advancedButton.setTooltip ("Pitch envelope, body, drive dynamics, length and engine options");
+    advancedButton.setClickingTogglesState (true);
+    advancedButton.onClick = [this] { advanced.setVisible (advancedButton.getToggleState()); advanced.refresh(); };
+    advanced.onClose = [this] { advancedButton.setToggleState (false, juce::sendNotification); };
 
     prevButton.onClick = [this] { stepPreset (-1); };
     nextButton.onClick = [this] { stepPreset (1); };
@@ -527,6 +684,7 @@ void PowerKickEditor::resized()
     meter.setBounds (outCol.withSizeKeepingCentre (S (22), outCol.getHeight()).reduced (0, S (2)));
 
     r.removeFromTop (S (12));
+    advanced.setBounds (r.withHeight (S (302)));
     // Knobs: two rows of four.
     auto rows = r.removeFromTop (S (262));
     const int rowH = rows.getHeight() / 2;
@@ -553,10 +711,12 @@ void PowerKickEditor::resized()
     width.setBounds (f.removeFromLeft (S (84)));
     delay.setBounds (f.removeFromLeft (S (84)));
     split.setBounds (f.removeFromLeft (S (84)));
-    auto var = f.removeFromRight (S (220)).withSizeKeepingCentre (S (220), S (30));
+    auto var = f.removeFromRight (S (330)).withSizeKeepingCentre (S (330), S (30));
     undoButton.setBounds (var.removeFromRight (S (72)));
     var.removeFromRight (S (8));
-    variationButton.setBounds (var);
+    variationButton.setBounds (var.removeFromRight (S (140)));
+    var.removeFromRight (S (8));
+    advancedButton.setBounds (var);
 }
 
 void PowerKickEditor::timerCallback()
@@ -576,6 +736,8 @@ void PowerKickEditor::timerCallback()
     delay.slider.setEnabled (stereoOn);
     split.slider.setEnabled (stereoOn);
     undoButton.setEnabled (! proc.variationUndo.empty());
+    if (advanced.isVisible())
+        advanced.refresh();
 
     // Re-render the preview waveform once the knobs settle.
     if (soundDirty)
