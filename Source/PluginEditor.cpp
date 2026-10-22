@@ -512,9 +512,12 @@ void PresetBrowser::selectCurrent()
             row = r;
     const juce::ScopedValueSetter<bool> guard (updating, true);
     if (row >= 0)
-        list.selectRow (row);
+        list.selectRow (row); // scrolls to the current preset
     else
+    {
         list.deselectAllRows();
+        list.scrollToEnsureRowIsOnscreen (0); // a new list without it starts at the top
+    }
 }
 
 void PresetBrowser::choose (int row, bool closeAfter)

@@ -108,6 +108,7 @@ public:
     void setSearch (const juce::String&);
     void choose (int row, bool close);
     int numShown() const { return (int) shown.size(); }
+    int firstVisibleRow() const { return list.getRowContainingPosition (1, 1); }
 
     bool keyPressed (const juce::KeyPress&) override;
     void paint (juce::Graphics&) override;
