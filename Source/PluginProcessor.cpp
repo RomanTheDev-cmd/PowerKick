@@ -21,6 +21,9 @@ void PowerKickProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
     engine.prepare (sampleRate, std::max (32, std::min (samplesPerBlock, 1024)), pk::readParams (state).oversampleIndex);
+    for (int i = 0; i < 3; ++i)
+        latencyByOversampling[(size_t) i] = engine.getLatencySamplesFor (i);
+    monoScratch.setSize (1, std::max (512, samplesPerBlock));
     setLatencySamples (engine.getLatencySamples());
 }
 
@@ -47,16 +50,20 @@ void PowerKickProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         }
 
     const auto params = pk::readParams (state);
-    // The engine renders stereo; a mono bus receives the mono sum.
-    juce::AudioBuffer<float> stereo;
+    // The engine renders stereo; a mono bus receives the mono sum. Its right channel comes from a
+    // buffer allocated in prepareToPlay, rendered in parts if the host sends a larger block.
     float* l = buffer.getWritePointer (0);
     float* r = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
-    if (r == nullptr)
-    {
-        stereo.setSize (1, n, false, false, true);
-        r = stereo.getWritePointer (0);
-    }
-    engine.process (l, r, n, midi, 0, params, bpm, monoCheck.load() || buffer.getNumChannels() == 1);
+    const bool mono = monoCheck.load() || buffer.getNumChannels() == 1;
+    if (r != nullptr)
+        engine.process (l, r, n, midi, 0, params, bpm, mono);
+    else
+        for (int done = 0; done < n;)
+        {
+            const int len = std::min (n - done, monoScratch.getNumSamples());
+            engine.process (l + done, monoScratch.getWritePointer (0), len, midi, done, params, bpm, mono);
+            done += len;
+        }
     if (const int latency = engine.getLatencySamples(); latency != getLatencySamples())
         setLatencySamples (latency);
     for (int c = 2; c < buffer.getNumChannels(); ++c)
@@ -68,7 +75,7 @@ void PowerKickProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         return std::max (std::abs (range.getStart()), std::abs (range.getEnd()));
     };
     meterL.store (std::max (peak (l), meterL.load() * 0.85f));
-    meterR.store (std::max (peak (r), meterR.load() * 0.85f));
+    meterR.store (std::max (peak (r != nullptr ? r : l), meterR.load() * 0.85f)); // mono bus: l holds the mono sum
 }
 
 //==============================================================================
@@ -205,6 +212,11 @@ void PowerKickProcessor::setStateInformation (const void* data, int sizeInBytes)
                     param->setValueNotifyingHost (param->convertTo0to1 (pk::legacyNeutral().at (pid)));
             slotA = slotB = pk::captureSnapshot (state);
             slotBActive = slotBUsed = false;
+            // A host may restore the project after prepareToPlay: report the restored oversampling's
+            // latency now, not only after the first block (processBlock keeps it in sync afterwards).
+            const auto restored = (size_t) juce::jlimit (0, 2, pk::readParams (state).oversampleIndex);
+            if (latencyByOversampling[restored] >= 0)
+                setLatencySamples (latencyByOversampling[restored]);
         }
 }
 

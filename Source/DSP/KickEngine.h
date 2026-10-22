@@ -542,7 +542,7 @@ public:
         sinceNote = 1.0e9;
         scoopCountdown = 0;
         for (auto& o : oversamplers) if (o) o->reset();
-        subDelay.reset();
+        cleanDelay.reset(); subDelay.reset();
         modWheel = 0.0; lastVel = 1.0;
         pending = {};
         handoffFramesLeft = 0;
@@ -551,6 +551,13 @@ public:
     }
 
     int getLatencySamples() const { return osLatency(); }
+
+    // Latency of an oversampling choice (0 = 2x, 1 = 4x, 2 = 8x) once prepared, -1 before.
+    int getLatencySamplesFor (int index) const
+    {
+        const auto& o = oversamplers[(size_t) juce::jlimit (0, 2, index)];
+        return o ? (int) std::lround (o->getLatencyInSamples()) : -1;
+    }
 
     // A new hit on top of a still-sounding one is a clean hand-off: the old body fades out in 1 ms
     // and the new hit starts right after it. The complete old path fades too: retained filter
@@ -593,11 +600,16 @@ public:
         {
             int len = std::min (blockSize, numSamples - done);
             const int start = midiOffset + done;
-            if (it != midi.cend())
-            {
-                const int untilEvent = (*it).samplePosition - start;
-                len = std::min (len, std::max (1, untilEvent));
-            }
+            // A note-on opens its own chunk for the hand-off reset. Mapped mod wheel changes also
+            // need a boundary: drive is set per chunk. Other events are applied per sample without
+            // splitting DSP, so dense unmapped controllers do not create one-sample chunks.
+            for (auto e = it; e != midi.cend() && (*e).samplePosition < start + len; ++e)
+                if (const auto msg = (*e).getMessage(); msg.isNoteOn()
+                    || (p.modDrive > 0.0f && msg.isController() && msg.getControllerNumber() == 1))
+                {
+                    len = std::min (len, std::max (1, (*e).samplePosition - start));
+                    break;
+                }
             if (handoffFramesLeft > 1)
                 len = std::min (len, handoffFramesLeft - 1);
             renderChunk (outL + done, outR + done, len, midi, it, start, p, bpm, monoCheck);
