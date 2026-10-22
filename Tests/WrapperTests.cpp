@@ -137,6 +137,44 @@ void testPresetSwitchingWhilePlaying()
     expect (p.getLatencySamples() >= 0, "latency reported");
 }
 
+void testOversamplingLatencyTracksProcessing()
+{
+    for (int choice = 0; choice < 3; ++choice)
+    {
+        PowerKickProcessor saved;
+        setPlain (saved, pk::id::oversample, (float) choice);
+        juce::MemoryBlock state;
+        saved.getStateInformation (state);
+        PowerKickProcessor restored;
+        restored.setStateInformation (state.getData(), (int) state.getSize());
+        restored.prepareToPlay (48000, 127);
+        juce::dsp::Oversampling<float> reference (1, (size_t) (choice + 1),
+            juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
+        reference.initProcessing (127);
+        const int expected = (int) std::lround (reference.getLatencyInSamples());
+        expect (restored.getLatencySamples() == expected, "restored oversampling " + juce::String (2 << choice)
+            + "x: latency is correct before the first audio block");
+    }
+    PowerKickProcessor p;
+    p.prepareToPlay (48000, 127);
+    juce::AudioBuffer<float> out (2, 127);
+    for (int choice : { 0, 1, 2, 0, 1 })
+    {
+        setPlain (p, pk::id::oversample, (float) choice);
+        // Independent reference: the latency of JUCE's selected oversampling filter.
+        juce::dsp::Oversampling<float> reference (1, (size_t) (choice + 1),
+            juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
+        reference.initProcessing (127);
+        const int expected = (int) std::lround (reference.getLatencyInSamples());
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 37);
+        out.clear();
+        p.processBlock (out, midi);
+        expect (p.getLatencySamples() == expected, "oversampling " + juce::String (2 << choice)
+            + "x: host latency " + juce::String (p.getLatencySamples()) + " equals filter latency " + juce::String (expected));
+    }
+}
+
 void testAutomation()
 {
     PowerKickProcessor p;
@@ -258,6 +296,7 @@ int main (int argc, char** argv)
     testStateRoundTrip();
     testLegacyProjectMigration();
     testPresetSwitchingWhilePlaying();
+    testOversamplingLatencyTracksProcessing();
     testAutomation();
     testMonoBus();
     testABAndVariation();

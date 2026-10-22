@@ -20,7 +20,7 @@ bool PowerKickProcessor::isBusesLayoutSupported (const BusesLayout& layouts) con
 void PowerKickProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     currentSampleRate = sampleRate;
-    engine.prepare (sampleRate, std::max (32, std::min (samplesPerBlock, 1024)));
+    engine.prepare (sampleRate, std::max (32, std::min (samplesPerBlock, 1024)), pk::readParams (state).oversampleIndex);
     setLatencySamples (engine.getLatencySamples());
 }
 
@@ -57,6 +57,8 @@ void PowerKickProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         r = stereo.getWritePointer (0);
     }
     engine.process (l, r, n, midi, 0, params, bpm, monoCheck.load() || buffer.getNumChannels() == 1);
+    if (const int latency = engine.getLatencySamples(); latency != getLatencySamples())
+        setLatencySamples (latency);
     for (int c = 2; c < buffer.getNumChannels(); ++c)
         buffer.clear (c, 0, n);
 
