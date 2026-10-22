@@ -1,4 +1,5 @@
 #include "Presets.h"
+#include <algorithm>
 
 namespace pk
 {
@@ -424,6 +425,41 @@ KickParams paramsFromSnapshot (const Snapshot& s)
     p.choke = get (id::choke, 0.0f) > 0.5f;
     p.rumbleMode = juce::roundToInt (get (id::rumbleMode, (float) p.rumbleMode));
     return p;
+}
+
+std::vector<int> filterPresets (const std::vector<Preset>& presets, const juce::String& category,
+                                const juce::StringArray& groups, const juce::String& text)
+{
+    juce::StringArray words;
+    words.addTokens (text, " \t", "");
+    words.removeEmptyStrings();
+    std::vector<int> out;
+    for (int i = 0; i < (int) presets.size(); ++i)
+    {
+        const auto& p = presets[(size_t) i];
+        if (category.isNotEmpty() && p.category != category)
+            continue;
+        if (! groups.isEmpty() && ! groups.contains (p.group))
+            continue;
+        bool match = true;
+        for (const auto& w : words)
+            match = match && (p.name.containsIgnoreCase (w) || p.category.containsIgnoreCase (w) || p.group.containsIgnoreCase (w));
+        if (match)
+            out.push_back (i);
+    }
+    // For reading: genres in library order (user presets last), names in natural order within a genre.
+    std::map<juce::String, int> rank;
+    for (const auto& p : presets)
+        rank.emplace (p.category, (int) rank.size());
+    std::stable_sort (out.begin(), out.end(), [&presets, &rank] (int a, int b)
+    {
+        const auto& pa = presets[(size_t) a];
+        const auto& pb = presets[(size_t) b];
+        if (pa.category != pb.category)
+            return rank[pa.category] < rank[pb.category];
+        return pa.name.compareNatural (pb.name) < 0;
+    });
+    return out;
 }
 
 juce::String presetToXml (const juce::String& name, const juce::String& category, const Snapshot& values)

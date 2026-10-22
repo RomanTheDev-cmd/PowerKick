@@ -94,6 +94,75 @@ private:
     std::vector<Label> labels;
 };
 
+// Preset browser: opens over the controls from the preset name. Categories on the left, a search field
+// and sound-type filters on top, every matching preset in one scrolling list. Choosing a preset loads it
+// at once (and plays it when AUDITION is on); arrow keys step through the list, Enter or Escape closes.
+class PresetBrowser : public juce::Component, private juce::ListBoxModel
+{
+public:
+    explicit PresetBrowser (PowerKickProcessor&);
+    ~PresetBrowser() override;
+    void open();                                // rescan, show the current preset, focus the search
+    void setCategory (const juce::String&);     // "" = all presets, "User" = the user's own
+    void toggleGroup (const juce::String&);     // sound type; none selected = every type
+    void setSearch (const juce::String&);
+    void choose (int row, bool close);
+    int numShown() const { return (int) shown.size(); }
+
+    bool keyPressed (const juce::KeyPress&) override;
+    void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
+    void resized() override;
+
+    std::function<void()> onLoaded, onClose;
+
+private:
+    struct SearchField : juce::TextEditor
+    {
+        std::function<bool (const juce::KeyPress&)> onKey;
+        bool keyPressed (const juce::KeyPress& k) override { return (onKey && onKey (k)) || juce::TextEditor::keyPressed (k); }
+    };
+    // The category column: one row per category with its preset count; "My presets" at the bottom.
+    struct Categories : juce::Component
+    {
+        explicit Categories (PresetBrowser& b) : owner (b) {}
+        void paint (juce::Graphics&) override;
+        void mouseMove (const juce::MouseEvent& e) override;
+        void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
+        void mouseDown (const juce::MouseEvent& e) override;
+        int rowAt (int y) const;
+        PresetBrowser& owner;
+        int hover = -1;
+    };
+
+    int getNumRows() override { return numShown(); }
+    void paintListBoxItem (int row, juce::Graphics&, int w, int h, bool selected) override;
+    void selectedRowsChanged (int lastRow) override;
+    void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override { close(); }
+    void returnKeyPressed (int) override { close(); }
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+
+    void refilter();
+    void rebuildGroups();
+    void selectCurrent();
+    void close() { if (onClose) onClose(); }
+    float scale() const { return getWidth() / 872.0f; }
+
+    PowerKickProcessor& proc;
+    SearchField search;
+    juce::TextButton auditionButton { "AUDITION" }, closeButton { "CLOSE" }, allTypesButton { "ALL TYPES" };
+    juce::OwnedArray<juce::TextButton> groupButtons;
+    Categories categories { *this };
+    juce::ListBox list { "Presets", this };
+    juce::StringArray categoryNames, groupNames, selectedGroups;
+    juce::String category;
+    std::vector<int> shown;
+    bool updating = false;
+    int hoverRow = -1;
+    juce::Rectangle<int> titleArea, searchArea, emptyArea;
+};
+
 class WaveformView : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -142,7 +211,6 @@ private:
     void timerCallback() override;
     void parameterChanged (const juce::String&, float) override { soundDirty = true; }
 
-    void showPresetMenu();
     void showMainMenu();
     void showExportMenu();
     void stepPreset (int delta);
@@ -164,6 +232,7 @@ private:
     pk::ui::Meter meter;
     pk::ui::Knob tune, decay, punch, body, click, drive, character, rumble, output, width, delay, split;
     pk::ui::AdvancedPanel advanced;
+    pk::ui::PresetBrowser browser;
 
     std::unique_ptr<juce::FileChooser> chooser;
     bool soundDirty = true;

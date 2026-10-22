@@ -373,6 +373,405 @@ void AdvancedPanel::resized()
 }
 
 //==============================================================================
+namespace
+{
+const juce::String userCategory { "User" };
+
+// Light pill as used by toggled buttons: the current choice.
+void fillSelection (juce::Graphics& g, juce::Rectangle<float> r, float radius)
+{
+    g.setGradientFill (juce::ColourGradient (colours::accent, r.getX(), r.getY(), juce::Colour (0xffb9bcc2), r.getX(), r.getBottom(), false));
+    g.fillRoundedRectangle (r, radius);
+}
+
+const juce::Colour selectedText { 0xff17181c };
+}
+
+PresetBrowser::PresetBrowser (PowerKickProcessor& p) : proc (p)
+{
+    setWantsKeyboardFocus (true);
+    search.setTextToShowWhenEmpty ("Search presets", colours::dim);
+    search.setJustification (juce::Justification::centredLeft);
+    search.setTooltip ("Type words of a name, a genre or a sound type");
+    search.onTextChange = [this] { refilter(); };
+    search.onReturnKey = [this] { close(); };
+    search.onEscapeKey = [this] { close(); };
+    search.onKey = [this] (const juce::KeyPress& k)
+    {
+        return (k == juce::KeyPress::upKey || k == juce::KeyPress::downKey) && keyPressed (k);
+    };
+    auditionButton.setClickingTogglesState (true);
+    auditionButton.setToggleState (true, juce::dontSendNotification);
+    auditionButton.setTooltip ("Play each preset as you choose it");
+    closeButton.setTooltip ("Back to the controls (Enter or Escape)");
+    closeButton.onClick = [this] { close(); };
+    allTypesButton.setTooltip ("Show every sound type");
+    allTypesButton.onClick = [this] { selectedGroups.clear(); refilter(); };
+    list.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+    list.setColour (juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
+    list.getVerticalScrollBar().setColour (juce::ScrollBar::thumbColourId, colours::faint);
+    list.addMouseListener (this, true);
+    for (auto* c : std::initializer_list<juce::Component*> { &search, &auditionButton, &closeButton, &allTypesButton, &categories, &list })
+        addAndMakeVisible (c);
+}
+
+PresetBrowser::~PresetBrowser()
+{
+    list.removeMouseListener (this);
+}
+
+void PresetBrowser::open()
+{
+    proc.library.rescan();
+    categoryNames.clear();
+    for (const auto& p : proc.library.all())
+        if (p.category != userCategory)
+            categoryNames.addIfNotAlreadyThere (p.category);
+    if (category.isNotEmpty() && category != userCategory && ! categoryNames.contains (category))
+        category = {};
+    rebuildGroups();
+    refilter();
+    setVisible (true);
+    if (isShowing())
+        search.grabKeyboardFocus();
+}
+
+void PresetBrowser::setCategory (const juce::String& c)
+{
+    category = c;
+    refilter();
+}
+
+void PresetBrowser::toggleGroup (const juce::String& g)
+{
+    if (selectedGroups.contains (g))
+        selectedGroups.removeString (g);
+    else
+        selectedGroups.add (g);
+    refilter();
+}
+
+void PresetBrowser::setSearch (const juce::String& t)
+{
+    search.setText (t, false);
+    refilter();
+}
+
+void PresetBrowser::rebuildGroups()
+{
+    groupNames.clear();
+    for (const auto& p : proc.library.all())
+        if (p.group.isNotEmpty())
+            groupNames.addIfNotAlreadyThere (p.group);
+    if (groupButtons.size() == groupNames.size())
+        return;
+    groupButtons.clear();
+    for (const auto& g : groupNames)
+    {
+        auto* b = groupButtons.add (new juce::TextButton());
+        b->setTooltip ("Show " + g + " sounds; several types can be on together");
+        b->onClick = [this, g] { toggleGroup (g); };
+        addAndMakeVisible (b);
+    }
+    resized();
+}
+
+void PresetBrowser::refilter()
+{
+    const auto& all = proc.library.all();
+    shown = pk::filterPresets (all, category, selectedGroups, search.getText());
+    // Type counts within the chosen category, so an empty type is visibly empty before it is clicked.
+    const auto inCategory = pk::filterPresets (all, category, {}, {});
+    for (int i = 0; i < groupNames.size(); ++i)
+    {
+        int n = 0;
+        for (int k : inCategory)
+            n += all[(size_t) k].group == groupNames[i] ? 1 : 0;
+        auto* b = groupButtons[i];
+        const bool on = selectedGroups.contains (groupNames[i]);
+        b->setButtonText (groupNames[i].toUpperCase() + "  " + juce::String (n));
+        b->setToggleState (on, juce::dontSendNotification);
+        b->setEnabled (n > 0 || on);
+    }
+    allTypesButton.setToggleState (selectedGroups.isEmpty(), juce::dontSendNotification);
+    resized(); // pill widths follow their labels
+    hoverRow = -1;
+    list.updateContent();
+    selectCurrent();
+    categories.repaint();
+    repaint();
+}
+
+void PresetBrowser::selectCurrent()
+{
+    const auto& all = proc.library.all();
+    const auto name = proc.getPresetName();
+    int row = -1;
+    for (int r = 0; r < numShown() && row < 0; ++r)
+        if (all[(size_t) shown[(size_t) r]].name == name)
+            row = r;
+    const juce::ScopedValueSetter<bool> guard (updating, true);
+    if (row >= 0)
+        list.selectRow (row);
+    else
+        list.deselectAllRows();
+}
+
+void PresetBrowser::choose (int row, bool closeAfter)
+{
+    if (row < 0 || row >= numShown())
+        return;
+    proc.loadPreset (shown[(size_t) row]);
+    if (auditionButton.getToggleState())
+        proc.triggerRequested = true;
+    {
+        const juce::ScopedValueSetter<bool> guard (updating, true);
+        list.selectRow (row);
+    }
+    if (onLoaded)
+        onLoaded();
+    if (closeAfter)
+        close();
+}
+
+void PresetBrowser::selectedRowsChanged (int lastRow)
+{
+    if (! updating && lastRow >= 0)
+        choose (lastRow, false);
+}
+
+bool PresetBrowser::keyPressed (const juce::KeyPress& k)
+{
+    if (k == juce::KeyPress::escapeKey || k == juce::KeyPress::returnKey)
+    {
+        close();
+        return true;
+    }
+    if (k == juce::KeyPress::upKey || k == juce::KeyPress::downKey)
+    {
+        if (shown.empty())
+            return true;
+        const int current = list.getSelectedRow();
+        const int next = current < 0 ? 0 : juce::jlimit (0, numShown() - 1, current + (k == juce::KeyPress::downKey ? 1 : -1));
+        if (next != current)
+            choose (next, false);
+        list.scrollToEnsureRowIsOnscreen (next);
+        return true;
+    }
+    return false;
+}
+
+void PresetBrowser::mouseMove (const juce::MouseEvent& e)
+{
+    int row = -1;
+    if (e.eventComponent == &list || list.isParentOf (e.eventComponent))
+        row = list.getRowContainingPosition (e.getEventRelativeTo (&list).x, e.getEventRelativeTo (&list).y);
+    if (row != hoverRow)
+    {
+        list.repaintRow (hoverRow);
+        hoverRow = row;
+        list.repaintRow (hoverRow);
+    }
+}
+
+void PresetBrowser::mouseExit (const juce::MouseEvent&)
+{
+    if (hoverRow >= 0)
+    {
+        list.repaintRow (hoverRow);
+        hoverRow = -1;
+    }
+}
+
+void PresetBrowser::paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected)
+{
+    if (row < 0 || row >= numShown())
+        return;
+    const auto& p = proc.library.all()[(size_t) shown[(size_t) row]];
+    const float s = scale();
+    const auto r = juce::Rectangle<float> (0.0f, 0.0f, (float) w, (float) h).reduced (2.0f * s, 1.5f * s);
+    if (selected)
+        fillSelection (g, r, 6.0f * s);
+    else if (row == hoverRow)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.fillRoundedRectangle (r, 6.0f * s);
+    }
+    // Type (and genre when all genres are listed) on the right, quieter than the name.
+    juce::String meta = p.category == userCategory ? juce::String ("MY PRESET") : p.group.toUpperCase();
+    if (category.isEmpty() && p.category != userCategory)
+        meta = p.category.toUpperCase() + (meta.isNotEmpty() ? "   " + meta : juce::String());
+    auto text = r.reduced (10.0f * s, 0.0f);
+    const auto metaFont = uiFont (10.5f * s, true).withExtraKerningFactor (0.08f);
+    const float metaW = (float) juce::GlyphArrangement::getStringWidthInt (metaFont, meta);
+    g.setFont (metaFont);
+    g.setColour (selected ? selectedText.withAlpha (0.65f) : colours::dim);
+    g.drawText (meta, text.removeFromRight (metaW), juce::Justification::centredRight, false);
+    text.removeFromRight (12.0f * s);
+    g.setFont (uiFont (14.0f * s));
+    g.setColour (selected ? selectedText : colours::text);
+    g.drawText (p.name, text, juce::Justification::centredLeft, true);
+}
+
+void PresetBrowser::paint (juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+    const float s = scale();
+    g.setColour (juce::Colours::black.withAlpha (0.35f));
+    g.fillRoundedRectangle (r.translated (0, 4), 14.0f);
+    g.setGradientFill (juce::ColourGradient (colours::panelTop, 0, r.getY(), colours::panelBot, 0, r.getBottom(), false));
+    g.fillRoundedRectangle (r, 14.0f);
+    g.setColour (colours::accent.withAlpha (0.35f));
+    g.drawRoundedRectangle (r.reduced (0.5f), 14.0f, 1.0f);
+
+    g.setFont (uiFont (11.0f * s, true).withExtraKerningFactor (0.18f));
+    g.setColour (colours::text);
+    g.drawText ("PRESETS", titleArea, juce::Justification::centredLeft);
+    // Hairline between the category column and the list.
+    g.setColour (colours::line);
+    g.fillRect (juce::Rectangle<int> (categories.getRight() + juce::roundToInt (8 * s), categories.getY(), 1, categories.getHeight()));
+
+    if (shown.empty())
+    {
+        const bool noOwn = category == userCategory && search.getText().trim().isEmpty() && selectedGroups.isEmpty();
+        g.setColour (colours::dim);
+        g.setFont (uiFont (14.0f * s));
+        g.drawFittedText (noOwn ? "No presets of your own yet.\nSave one with  ...  >  Save as."
+                                : "No presets match.\nClear the search or choose another type.",
+                          emptyArea, juce::Justification::centred, 2);
+    }
+}
+
+void PresetBrowser::paintOverChildren (juce::Graphics& g)
+{
+    // Magnifier drawn inside the search field.
+    const float s = scale();
+    const auto b = search.getBounds().toFloat();
+    const float d = 10.0f * s;
+    const juce::Point<float> c (b.getX() + 15.0f * s, b.getCentreY() - 1.0f * s);
+    g.setColour (colours::dim);
+    g.drawEllipse (c.x - d * 0.5f, c.y - d * 0.5f, d, d, 1.4f * s);
+    const auto from = c.getPointOnCircumference (d * 0.5f, juce::MathConstants<float>::pi * 0.75f);
+    g.drawLine ({ from, from + juce::Point<float> (3.5f * s, 3.5f * s) }, 1.6f * s);
+}
+
+void PresetBrowser::resized()
+{
+    const float s = scale();
+    auto S = [s] (float v) { return juce::roundToInt (v * s); };
+    auto r = getLocalBounds().reduced (S (16), S (12));
+
+    auto top = r.removeFromTop (S (30));
+    closeButton.setBounds (top.removeFromRight (S (72)).withSizeKeepingCentre (S (72), S (24)));
+    top.removeFromRight (S (8));
+    auditionButton.setBounds (top.removeFromRight (S (100)).withSizeKeepingCentre (S (100), S (24)));
+    titleArea = top.removeFromLeft (S (200));
+    const int searchW = std::min (top.getWidth() - S (16), S (340));
+    searchArea = top.removeFromLeft (searchW).withSizeKeepingCentre (searchW, S (28));
+    search.setBounds (searchArea);
+    const auto font = uiFont (14.0f * s);
+    search.setFont (font);
+    search.applyFontToAllText (font);
+    search.setIndents (S (30), juce::jmax (0, (searchArea.getHeight() - juce::roundToInt (font.getHeight())) / 2));
+    r.removeFromTop (S (12));
+
+    auto left = r.removeFromLeft (S (184));
+    r.removeFromLeft (S (17));
+
+    // Sound types as pills, wrapping onto a second line when the window is small.
+    const int pillH = S (26), gap = S (6);
+    auto pillWidth = [&] (juce::TextButton& b)
+    {
+        auto& lf = getLookAndFeel();
+        return juce::GlyphArrangement::getStringWidthInt (lf.getTextButtonFont (b, pillH), b.getButtonText()) + S (20);
+    };
+    std::vector<juce::TextButton*> pills { &allTypesButton };
+    for (auto* b : groupButtons)
+        pills.push_back (b);
+    int x = r.getX(), y = r.getY();
+    for (auto* b : pills)
+    {
+        const int w = pillWidth (*b);
+        if (x > r.getX() && x + w > r.getRight())
+        {
+            x = r.getX();
+            y += pillH + gap;
+        }
+        b->setBounds (x, y, w, pillH);
+        x += w + gap;
+    }
+    r.setTop (y + pillH + S (12));
+    list.setRowHeight (S (28));
+    list.setBounds (r);
+    emptyArea = r.withHeight (S (90));
+    categories.setBounds (left); // starts level with the type filters, so a second filter line leaves no gap
+}
+
+int PresetBrowser::Categories::rowAt (int y) const
+{
+    const float s = owner.scale();
+    const int rowH = juce::roundToInt (30 * s), n = owner.categoryNames.size() + 1;
+    if (y < rowH * n)
+        return y / rowH;
+    const int userTop = rowH * n + juce::roundToInt (14 * s);
+    return y >= userTop && y < userTop + rowH ? n : -1;
+}
+
+void PresetBrowser::Categories::paint (juce::Graphics& g)
+{
+    const float s = owner.scale();
+    const int rowH = juce::roundToInt (30 * s), n = owner.categoryNames.size() + 1;
+    const auto& all = owner.proc.library.all();
+    for (int i = 0; i <= n; ++i)
+    {
+        const bool user = i == n;
+        const juce::String key = i == 0 ? juce::String() : (user ? userCategory : owner.categoryNames[i - 1]);
+        const juce::String label = i == 0 ? juce::String ("All presets") : (user ? juce::String ("My presets") : key);
+        const int top = user ? rowH * n + juce::roundToInt (14 * s) : rowH * i;
+        if (user)
+        {
+            g.setColour (colours::line);
+            g.fillRect (juce::Rectangle<int> (0, rowH * n + juce::roundToInt (7 * s), getWidth(), 1));
+        }
+        auto r = juce::Rectangle<float> (0.0f, (float) top, (float) getWidth(), (float) rowH).reduced (0.0f, 1.5f * s);
+        const bool selected = owner.category == key;
+        if (selected)
+            fillSelection (g, r, 6.0f * s);
+        else if (i == hover)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.06f));
+            g.fillRoundedRectangle (r, 6.0f * s);
+        }
+        auto text = r.reduced (10.0f * s, 0.0f);
+        const auto count = juce::String ((int) pk::filterPresets (all, key, {}, {}).size());
+        g.setFont (uiFont (12.0f * s, true));
+        g.setColour (selected ? selectedText.withAlpha (0.65f) : colours::dim);
+        g.drawText (count, text.removeFromRight (34.0f * s), juce::Justification::centredRight);
+        g.setFont (uiFont (13.5f * s));
+        g.setColour (selected ? selectedText : colours::text);
+        g.drawText (label, text, juce::Justification::centredLeft, true);
+    }
+}
+
+void PresetBrowser::Categories::mouseMove (const juce::MouseEvent& e)
+{
+    const int row = rowAt (e.y);
+    if (row != hover)
+    {
+        hover = row;
+        repaint();
+    }
+}
+
+void PresetBrowser::Categories::mouseDown (const juce::MouseEvent& e)
+{
+    const int row = rowAt (e.y), n = owner.categoryNames.size() + 1;
+    if (row < 0)
+        return;
+    owner.setCategory (row == 0 ? juce::String() : (row == n ? userCategory : owner.categoryNames[row - 1]));
+}
+
+//==============================================================================
 WaveformView::WaveformView (PowerKickProcessor& p) : proc (p)
 {
     setTooltip ("Drag this waveform into your DAW to drop the kick as a 24-bit WAV");
@@ -532,7 +931,7 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
       width (p.state, pk::id::width, "WIDTH", "Stereo width above SPLIT; the sub always stays mono", true),
       delay (p.state, pk::id::delay, "DELAY", "Time offset between left and right in the widened part (needs WIDTH above 0)", true),
       split (p.state, pk::id::splitFreq, "SPLIT", "Widening starts above this frequency; the sub below 120 Hz always stays mono", true),
-      advanced (p.state)
+      advanced (p.state), browser (p)
 {
     setLookAndFeel (&lnf);
     tune.slider.getProperties().set ("bipolar", true);
@@ -562,6 +961,11 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
         addAndMakeVisible (b);
     }
     addChildComponent (advanced); // last: lies on top of the knob area when open
+    addChildComponent (browser);  // over everything below the header when open
+    presetButton.setComponentID ("presetButton");
+    browser.setComponentID ("presetBrowser");
+    advancedButton.setComponentID ("advancedButton");
+    nextButton.setComponentID ("nextButton");
 
     prevButton.setTooltip ("Previous preset");
     nextButton.setTooltip ("Next preset");
@@ -576,12 +980,35 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
     undoButton.setTooltip ("Undo the last variation");
     advancedButton.setTooltip ("Pitch envelope, body, drive dynamics, length and engine options");
     advancedButton.setClickingTogglesState (true);
-    advancedButton.onClick = [this] { advanced.setVisible (advancedButton.getToggleState()); advanced.refresh(); };
+    advancedButton.onClick = [this]
+    {
+        if (advancedButton.getToggleState() && browser.isVisible())
+            browser.onClose();
+        advanced.setVisible (advancedButton.getToggleState());
+        advanced.refresh();
+    };
     advanced.onClose = [this] { advancedButton.setToggleState (false, juce::sendNotification); };
 
     prevButton.onClick = [this] { stepPreset (-1); };
     nextButton.onClick = [this] { stepPreset (1); };
-    presetButton.onClick = [this] { showPresetMenu(); };
+    presetButton.onClick = [this]
+    {
+        if (browser.isVisible())
+        {
+            browser.onClose();
+            return;
+        }
+        if (advancedButton.getToggleState())
+            advancedButton.setToggleState (false, juce::sendNotification);
+        presetButton.setToggleState (true, juce::dontSendNotification);
+        browser.open();
+    };
+    browser.onLoaded = [this] { refreshHeader(); };
+    browser.onClose = [this]
+    {
+        browser.setVisible (false);
+        presetButton.setToggleState (false, juce::dontSendNotification);
+    };
     menuButton.onClick = [this] { showMainMenu(); };
     aButton.onClick = [this] { proc.switchSlot (false); refreshHeader(); };
     bButton.onClick = [this] { proc.switchSlot (true); refreshHeader(); };
@@ -685,6 +1112,7 @@ void PowerKickEditor::resized()
 
     r.removeFromTop (S (12));
     advanced.setBounds (r.withHeight (S (302)));
+    browser.setBounds (getLocalBounds().withTrimmedTop (S (60)).reduced (S (24), S (14)).withTrimmedTop (0));
     // Knobs: two rows of four.
     auto rows = r.removeFromTop (S (262));
     const int rowH = rows.getHeight() / 2;
@@ -767,48 +1195,21 @@ void PowerKickEditor::refreshHeader()
 
 void PowerKickEditor::stepPreset (int delta)
 {
-    const auto& all = proc.library.all();
-    if (all.empty()) return;
-    int i = proc.library.indexOf (proc.getPresetName());
-    i = (i < 0 ? 0 : i + delta + (int) all.size()) % (int) all.size();
-    proc.loadPreset (i);
-    refreshHeader();
-}
-
-void PowerKickEditor::showPresetMenu()
-{
-    proc.library.rescan();
-    const auto& all = proc.library.all();
-    juce::PopupMenu menu;
-    juce::StringArray cats;
-    for (const auto& p : all)
-        cats.addIfNotAlreadyThere (p.category);
-    for (const auto& c : cats)
+    if (browser.isVisible()) // with the browser open, < > step through its filtered list
     {
-        // Category -> optional sub-group -> preset (300 presets stay browsable).
-        juce::StringArray groups;
-        for (const auto& p : all)
-            if (p.category == c) groups.addIfNotAlreadyThere (p.group);
-        juce::PopupMenu sub;
-        const bool nested = groups.size() > 1;
-        for (const auto& g : groups)
-        {
-            juce::PopupMenu items;
-            bool ticked = false;
-            for (size_t i = 0; i < all.size(); ++i)
-                if (all[i].category == c && all[i].group == g)
-                {
-                    const bool current = all[i].name == proc.getPresetName();
-                    ticked = ticked || current;
-                    (nested && g.isNotEmpty() ? items : sub).addItem ((int) i + 1, all[i].name, true, current);
-                }
-            if (nested && g.isNotEmpty())
-                sub.addSubMenu (g, items, true, nullptr, ticked);
-        }
-        menu.addSubMenu (c, sub);
+        browser.keyPressed (juce::KeyPress (delta > 0 ? juce::KeyPress::downKey : juce::KeyPress::upKey));
+        return;
     }
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetButton),
-                        [this] (int r) { if (r > 0) { proc.loadPreset (r - 1); refreshHeader(); } });
+    // Closed: every preset, in the browser's order (genre, then name).
+    proc.library.rescan();
+    const auto order = pk::filterPresets (proc.library.all(), {}, {}, {});
+    if (order.empty()) return;
+    const int current = proc.library.indexOf (proc.getPresetName());
+    const auto at = std::find (order.begin(), order.end(), current);
+    const int n = (int) order.size();
+    const int pos = at == order.end() ? 0 : ((int) (at - order.begin()) + delta + n) % n;
+    proc.loadPreset (order[(size_t) pos]);
+    refreshHeader();
 }
 
 void PowerKickEditor::showMainMenu()

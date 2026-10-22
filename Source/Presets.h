@@ -28,6 +28,13 @@ const Snapshot& legacyNeutral();
 void applySnapshot (juce::AudioProcessorValueTreeState& state, const Snapshot& values);
 KickParams paramsFromSnapshot (const Snapshot& values);
 
+// Preset browser filter. category: "" = all, otherwise a category name ("User" = the user's own presets).
+// groups: any of these browser groups (empty = all). text: every word must appear (case-insensitive) in
+// the name, the category or the group. Returns indices into presets: genres in library order (user
+// presets last), names in natural alphabetical order within a genre.
+std::vector<int> filterPresets (const std::vector<Preset>& presets, const juce::String& category,
+                                const juce::StringArray& groups, const juce::String& text);
+
 // Portable XML format (.pkpreset): UTF-8, plain values, no absolute paths.
 juce::String presetToXml (const juce::String& name, const juce::String& category, const Snapshot& values);
 bool presetFromXml (const juce::String& xml, Preset& out, juce::String& error);
