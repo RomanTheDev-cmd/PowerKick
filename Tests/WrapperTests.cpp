@@ -425,6 +425,11 @@ void testPresetBrowser()
     expect (browser->isVisible(), "clicking the preset name opens the browser");
     expect (browser->numShown() == (int) pk::factoryPresets().size(), "the browser lists every preset at first ("
             + juce::String (browser->numShown()) + ")");
+    // The list opens scrolled to the current preset; a new filter without it starts at the top.
+    browser->setCategory ("Schranz");
+    expect (browser->firstVisibleRow() == 0, "a filter without the current preset starts at the top of the list (row "
+            + juce::String (browser->firstVisibleRow()) + ")");
+    browser->setCategory ({});
     browser->setCategory ("Hard Techno");
     browser->toggleGroup ("Clean");
     expect (browser->numShown() == 45, "category and sound type filter the list (" + juce::String (browser->numShown()) + ")");
