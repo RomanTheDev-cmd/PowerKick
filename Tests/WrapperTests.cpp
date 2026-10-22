@@ -2,6 +2,7 @@
 // The DSP itself is covered by PowerKickTests.cpp.
 
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include <atomic>
 #include <iostream>
 #include <new>
@@ -278,6 +279,56 @@ void testFactoryPresetsLoadAsMeasured()
     expect (bad == 0, "factory presets load in the plug-in as measured (" + juce::String (bad) + " differ; " + first + ")");
 }
 
+// The preset browser's filter: category, any of the selected groups, and words of a search text.
+void testPresetFilter()
+{
+    const auto& all = pk::factoryPresets();
+    auto names = [&all] (const std::vector<int>& idx)
+    {
+        juce::StringArray n;
+        for (int i : idx) n.add (all[(size_t) i].name);
+        return n;
+    };
+    expect (pk::filterPresets (all, {}, {}, {}).size() == all.size(), "no filter shows every preset");
+    expect (pk::filterPresets (all, "Hard Techno", {}, {}).size() == 110, "category Hard Techno: 110 presets");
+    expect (pk::filterPresets (all, "Hard Techno", { "Clean" }, {}).size() == 45, "Hard Techno + Clean: 45 presets");
+    const auto two = pk::filterPresets (all, "Techno", { "Short", "Long" }, {});
+    expect (two.size() == 17, "Techno + Short or Long: 9 + 8 presets (" + juce::String ((int) two.size()) + ")");
+    const auto found = names (pk::filterPresets (all, {}, {}, "  classic PUNCH "));
+    expect (found.contains ("Classic Punch"), "search finds a preset by words in any case");
+    bool allMatch = true;
+    for (const auto& n : found)
+        allMatch = allMatch && n.containsIgnoreCase ("classic") && n.containsIgnoreCase ("punch");
+    expect (allMatch && found.size() >= 1, "every search result contains every word");
+    // Words also match the category and the group: "schranz wide" covers all 14 Schranz presets of the
+    // Wide group, plus Schranz presets with "Wide" in their name.
+    const auto sw = pk::filterPresets (all, {}, {}, "schranz wide");
+    const auto group = pk::filterPresets (all, "Schranz", { "Wide" }, {});
+    bool covers = group.size() == 14;
+    for (int i : group) covers = covers && std::find (sw.begin(), sw.end(), i) != sw.end();
+    bool onlySchranz = true;
+    for (int i : sw)
+        onlySchranz = onlySchranz && all[(size_t) i].category == "Schranz"
+                      && (all[(size_t) i].group == "Wide" || all[(size_t) i].name.containsIgnoreCase ("wide"));
+    expect (covers && onlySchranz, "search matches the category and the group too (" + juce::String ((int) sw.size()) + " results)");
+    expect (pk::filterPresets (all, {}, {}, "zzzz").empty(), "a search without matches is empty");
+    expect (pk::filterPresets (all, "User", {}, {}).empty(), "User shows only the user's own presets (none among factory presets)");
+    // Sorted for reading: genres in library order, names alphabetically (natural order) within a genre.
+    const auto order = pk::filterPresets (all, {}, {}, {});
+    bool sorted = true;
+    for (size_t k = 1; k < order.size(); ++k)
+    {
+        const auto& a = all[(size_t) order[k - 1]];
+        const auto& b = all[(size_t) order[k]];
+        if (a.category == b.category)
+            sorted = sorted && a.name.compareNatural (b.name) <= 0;
+    }
+    juce::StringArray genres;
+    for (int i : order) if (! genres.contains (all[(size_t) i].category)) genres.add (all[(size_t) i].category);
+    expect (sorted && genres.joinIntoString ("|") == "Techno|Hard Techno|Schranz|Industrial|Rave / Hard Dance",
+            "results are sorted by genre, then by name (" + genres.joinIntoString (", ") + ")");
+}
+
 void testAutomation()
 {
     PowerKickProcessor p;
@@ -356,6 +407,70 @@ void testPreview()
     expect (r.peak > 0.1, "PREVIEW plays a kick");
 }
 
+// The preset browser replaces the nested preset menus: one panel, one list, filters on top.
+void testPresetBrowser()
+{
+#if JUCE_MAC
+    juce::ScopedJuceInitialiser_GUI gui;
+    PowerKickProcessor p;
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+    auto* button = dynamic_cast<juce::Button*> (ed->findChildWithID ("presetButton"));
+    auto* advanced = dynamic_cast<juce::Button*> (ed->findChildWithID ("advancedButton"));
+    auto* browser = dynamic_cast<pk::ui::PresetBrowser*> (ed->findChildWithID ("presetBrowser"));
+    expect (button != nullptr && advanced != nullptr && browser != nullptr && ! browser->isVisible(),
+            "the preset browser exists and starts closed");
+    if (button == nullptr || advanced == nullptr || browser == nullptr)
+        return;
+    button->onClick();
+    expect (browser->isVisible(), "clicking the preset name opens the browser");
+    expect (browser->numShown() == (int) pk::factoryPresets().size(), "the browser lists every preset at first ("
+            + juce::String (browser->numShown()) + ")");
+    browser->setCategory ("Hard Techno");
+    browser->toggleGroup ("Clean");
+    expect (browser->numShown() == 45, "category and sound type filter the list (" + juce::String (browser->numShown()) + ")");
+    const auto rows = pk::filterPresets (pk::factoryPresets(), "Hard Techno", { "Clean" }, {});
+    auto nameAt = [&rows] (int r) { return pk::factoryPresets()[(size_t) rows[(size_t) r]].name; };
+    p.triggerRequested = false;
+    browser->choose (2, false);
+    expect (p.getPresetName() == nameAt (2) && browser->isVisible(), "choosing a row loads that preset and keeps the browser open");
+    expect (p.triggerRequested.exchange (false), "with AUDITION on, a chosen preset plays at once");
+    browser->keyPressed (juce::KeyPress (juce::KeyPress::downKey));
+    expect (p.getPresetName() == nameAt (3), "the down arrow loads the next preset of the list");
+    browser->keyPressed (juce::KeyPress (juce::KeyPress::upKey));
+    browser->keyPressed (juce::KeyPress (juce::KeyPress::upKey));
+    expect (p.getPresetName() == nameAt (1), "the up arrow loads the previous preset of the list");
+    browser->keyPressed (juce::KeyPress (juce::KeyPress::escapeKey));
+    expect (! browser->isVisible(), "Escape closes the browser");
+    button->onClick();
+    expect (browser->numShown() == 45, "the browser remembers its filters while the window is open");
+    browser->setSearch ("zzzz");
+    expect (browser->numShown() == 0, "a search without matches shows an empty list");
+    browser->setSearch ({});
+    browser->keyPressed (juce::KeyPress (juce::KeyPress::returnKey));
+    expect (! browser->isVisible(), "Enter closes the browser");
+    button->onClick();
+    advanced->setToggleState (true, juce::sendNotification);
+    expect (! browser->isVisible(), "opening ADVANCED closes the browser");
+    button->onClick();
+    expect (browser->isVisible() && ! advanced->getToggleState(), "opening the browser closes ADVANCED");
+    browser->keyPressed (juce::KeyPress (juce::KeyPress::escapeKey));
+    // With the browser closed, < > step through every preset in the browser's order (genre, then name).
+    if (auto* next = dynamic_cast<juce::Button*> (ed->findChildWithID ("nextButton")))
+    {
+        const auto order = pk::filterPresets (pk::factoryPresets(), {}, {}, {});
+        size_t k = 0; // a place where the browser's order differs from the library order
+        while (k + 1 < order.size() && order[k + 1] == order[k] + 1)
+            ++k;
+        p.loadPreset (order[k]);
+        next->onClick();
+        expect (p.getPresetName() == pk::factoryPresets()[(size_t) order[k + 1]].name, "> loads the next preset in the browser's order");
+    }
+    else
+        expect (false, "next button found");
+    ed.reset();
+#endif
+}
+
 void testEditor()
 {
 #if JUCE_MAC
@@ -396,6 +511,23 @@ int snapshot (const juce::File& dir)
     save ("advanced.png", 1.0f);
     ed->setBoundsConstrained ({ 0, 0, 736, 528 });
     save ("advanced_small.png", 1.0f);
+    // Preset browser: all presets, a filtered list, an empty search, the small window.
+    ed->setBoundsConstrained ({ 0, 0, 920, 660 });
+    auto* button = dynamic_cast<juce::Button*> (ed->findChildWithID ("presetButton"));
+    auto* browser = dynamic_cast<pk::ui::PresetBrowser*> (ed->findChildWithID ("presetBrowser"));
+    if (button != nullptr && browser != nullptr)
+    {
+        button->onClick();
+        save ("browser.png", 1.0f);
+        browser->setCategory ("Hard Techno");
+        browser->toggleGroup ("Clean");
+        save ("browser_filtered.png", 1.0f);
+        browser->setSearch ("nothing like this");
+        save ("browser_empty.png", 1.0f);
+        browser->setSearch ({});
+        ed->setBoundsConstrained ({ 0, 0, 736, 528 });
+        save ("browser_small.png", 1.0f);
+    }
     ed.reset();
     return 0;
 }
@@ -412,11 +544,13 @@ int main (int argc, char** argv)
     testLatencyOfStateRestoredAfterPrepare();
     testReprepareMatchesFresh();
     testFactoryPresetsLoadAsMeasured();
+    testPresetFilter();
     testAutomation();
     testMonoBus();
     testABAndVariation();
     testPreview();
     testEditor();
+    testPresetBrowser();
     std::cout << (failures == 0 ? "PASS " : "FAILED ") << (checks - failures) << "/" << checks << " wrapper checks\n";
     return failures == 0 ? 0 : 1;
 }
