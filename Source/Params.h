@@ -88,8 +88,8 @@ struct KickParams
     float pitchCurve = 0.0f;    // 0 exponential sweep .. 1 slower, rounder sweep
     int keyRoot = 60;           // key tracking root note
     float modDrive = 0.0f;      // mod wheel -> drive
-    bool choke = false;         // a new hit cuts the previous one in 1 ms (instead of 4 ms)
-    int rumbleMode = 0;         // 0 classic comb rumble, 1 diffuse reverb rumble      // 0..1: mid scoop of the body after the attack (0 = -24 dB at ~1 kHz, 1 = none)
+    bool choke = false;         // a MIDI note-off cuts the kick (note length = kick length)
+    int rumbleMode = 0;         // 0 classic comb rumble, 1 diffuse reverb rumble
 };
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();

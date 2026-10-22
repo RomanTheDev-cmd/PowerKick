@@ -38,7 +38,6 @@ public:
         hold = decaySec * (0.06 + 0.54 * body);
         curveShape = p.pitchCurve;
         subLevel = p.subLevel;
-        chokeFast = p.choke;
         // High BODY holds the level and then stops, like measured hard-techno kicks
         // (tail only 1-2 dB under the hit); low BODY decays smoothly.
         curve = 0.35 + 3.65 * std::pow (1.0 - body, 1.4);
@@ -71,17 +70,19 @@ public:
         phase = 0.25 * juce::jlimit (0.0f, 1.0f, p.startPhase); // START PHASE: 0..90 degrees
         fade = 1.0;
         fadeStep = 0.0;
+        lastAmp = 0.0;
         active = true;
     }
 
-    // Short fade so a retrigger never cuts a waveform mid-cycle.
-    void release (bool choke = false) noexcept
+    // Short fade so a hand-off or a note-off never cuts a waveform mid-cycle.
+    void release (double fadeSeconds) noexcept
     {
         if (active && fadeStep == 0.0)
-            fadeStep = 1.0 / ((choke ? 0.001 : 0.004) * sr); // CHOKE: 1 ms
+            fadeStep = 1.0 / (fadeSeconds * sr);
     }
 
     bool isActive() const noexcept { return active; }
+    double level() const noexcept { return active ? lastAmp * fade : 0.0; } // current body envelope
 
     // Returns body and click separately; env receives the amplitude envelope
     // (used to duck the rumble under each hit).
@@ -115,6 +116,7 @@ public:
         const double transient = 1.0 + punch * 0.9 * std::exp (-t / 0.016);
         a *= attack * fade;
         env = a;
+        lastAmp = a * transient * velGain;
         bodyOut = s * a * transient * velGain * (0.92 / (1.0 + 0.45 * punch));
         // SUB LAYER: the same pitch as a clean, unsaturated sine; mixed after the drive.
         if (subLevel > 0.0)
@@ -172,12 +174,11 @@ private:
     double sr = 48000.0, t = 0.0, phase = 0.0;
     double f0 = 43.65, depth = 30.0, pitchTau = 0.03, fall = 0.0, fallTau = 0.1, punch = 0.5, body = 0.5;
     double curveShape = 0.0, subLevel = 0.0;
-    bool chokeFast = false;
     double decaySec = 0.4, hold = 0.05, curve = 2.0, satGain = 2.0, satNorm = 1.0, velGain = 1.0;
     ClickType clickType = ClickType::sharp;
     double clickTone = 0.5, clickGain = 0.0, clickTau = 0.002, blipFreq = 1000.0;
     double metalPhase[6] {}, metalInc[6] {};
-    double fade = 1.0, fadeStep = 0.0;
+    double fade = 1.0, fadeStep = 0.0, lastAmp = 0.0;
     bool active = false;
     Svf clickFilter;
     Rng rng;
@@ -450,7 +451,7 @@ public:
         double sub, rest, body, high;
         xoLow.split (x, sub, rest);
         xoHigh.split (rest, body, high);
-        sub = xoHigh.allpass (sub);
+        juce::ignoreUnused (sub);
 
         // WIDTH: a decorrelated copy of HIGH (plus a trace of BODY, as in measured schranz
         // kicks), same spectrum, as the side signal.
@@ -475,7 +476,9 @@ public:
         double sideSrc = d + 2.0 * haasSide;
         for (auto& h : sideHp) sideSrc = h.tick (sideSrc);
         const double side = w * 0.9 * sideSrc;
-        const double centre = sub + body + high;
+        // The centre is the input itself: no band split in the main path, so the lows are not
+        // delayed against the attack (the bands only feed the side signal).
+        const double centre = x;
         l = centre + side;
         r = centre - side;
     }
@@ -507,9 +510,7 @@ public:
         rumble.prepare (sr);
         eq.prepare (sr);
         stereo.prepare (sr);
-        subXoClean.set (90.0, sr);
-        subXoDriven.set (90.0, sr);
-        subXoSub.set (90.0, sr);
+        lpD.set (90.0, sr); lpC.set (90.0, sr);
         dc.set (12.0, sr);
         mono.setSize (1, blockSize);
         clean.assign ((size_t) blockSize, 0.0);
@@ -530,9 +531,7 @@ public:
         for (auto& v : voices) v = KickVoice(), v.prepare (sr);
         rumble.reset();
         stereo.reset();
-        subXoClean.reset();
-        subXoDriven.reset();
-        subXoSub.reset();
+        lpD.reset(); lpC.reset();
         dc.reset();
         scoop.reset();
         scoopDb = 0.0;
@@ -543,21 +542,38 @@ public:
         for (auto& o : oversamplers) if (o) o->reset();
         subDelay.reset();
         modWheel = 0.0; lastVel = 1.0;
+        pending = {};
         firstBlock = true;
     }
 
     int getLatencySamples() const { return osLatency(); }
 
+    // A new hit on top of a still-sounding one is a clean hand-off: the old body fades out in 1 ms
+    // and the new hit starts right after it. Summing a fresh attack onto a body that still holds
+    // its level added up to +6 dB on rolls; with the hand-off a roll peaks like a single hit.
+    // The 1 ms delay only applies when the previous hit is still audible (not in a 4/4 pattern
+    // whose kicks have ended).
     void noteOn (const KickParams& p, int note, float velocity, double bpm = 140.0)
     {
-        sinceNote = 0.0;
         lastVel = juce::jlimit (0.0, 1.0, (double) velocity);
-        for (auto& v : voices) v.release (p.choke);
-        // Prefer a free slot; otherwise steal the older (already fading) one.
-        auto& v = ! voices[next].isActive() ? voices[next] : voices[1 - next];
-        v.start (p, note, velocity, seedCounter += 0x6F4F2A1Bu, bpm);
-        next = 1 - next;
-        rumble.trigger();
+        double sounding = 0.0;
+        for (auto& v : voices) sounding = std::max (sounding, v.level());
+        if (sounding > 0.01) // above -40 dB: hand off
+        {
+            for (auto& v : voices) v.release (handOffSeconds);
+            pending = { true, note, velocity, bpm, (int) std::ceil (handOffSeconds * sr) };
+            return;
+        }
+        for (auto& v : voices) v.release (0.004);
+        startVoice (p, note, velocity, bpm);
+    }
+
+    // CHOKE: a MIDI note-off cuts the kick (4 ms fade), so the note length sets the kick length.
+    void noteOff (const KickParams& p)
+    {
+        if (! p.choke) return;
+        pending.active = false;
+        for (auto& v : voices) v.release (0.004);
     }
 
     // Renders numSamples into out (2 channels). Events must be pre-sorted.
@@ -576,6 +592,22 @@ public:
     }
 
 private:
+    static constexpr double handOffSeconds = 0.001;
+    struct Pending { bool active = false; int note = 60; float velocity = 1.0f; double bpm = 140.0; int countdown = 0; };
+    Pending pending;
+
+    void startVoice (const KickParams& p, int note, float velocity, double bpm)
+    {
+        sinceNote = 0.0;
+        // Prefer a free slot; otherwise steal the older (already fading) one.
+        auto& v = ! voices[next].isActive() ? voices[next] : voices[1 - next];
+        // The click noise is the same on every hit (as in a sample, and as the presets were
+        // fitted and levelled): a random burst would peak differently from hit to hit.
+        v.start (p, note, velocity, clickSeed, bpm);
+        next = 1 - next;
+        rumble.trigger();
+    }
+
     void renderChunk (float* outL, float* outR, int len, const juce::MidiBuffer& midi, juce::MidiBufferIterator& it,
                       int chunkStart, const KickParams& p, double bpm, bool monoCheck)
     {
@@ -613,11 +645,21 @@ private:
                 const auto msg = (*it).getMessage();
                 if (msg.isNoteOn())
                     noteOn (p, msg.getNoteNumber(), msg.getFloatVelocity(), bpm);
+                else if (msg.isNoteOff())
+                    noteOff (p);
                 else if (msg.isController() && msg.getControllerNumber() == 1)
                     modWheel = msg.getControllerValue() / 127.0;
                 else if (msg.isAllNotesOff() || msg.isAllSoundOff())
-                    for (auto& v : voices) v.release();
+                {
+                    pending.active = false;
+                    for (auto& v : voices) v.release (0.004);
+                }
                 ++it;
+            }
+            if (pending.active && --pending.countdown <= 0)
+            {
+                pending.active = false;
+                startVoice (p, pending.note, pending.velocity, pending.bpm);
             }
             double bodySum = 0.0, clickSum = 0.0, envSum = 0.0, subSum = 0.0;
             for (auto& v : voices)
@@ -664,14 +706,18 @@ private:
             cleanDelay.push (clean[(size_t) i]);
             const double cleanAligned = cleanDelay.read ((double) lat);
 
-            double dLow, dHigh, cLow, cHigh;
+            double dLow, dHigh, cLow;
             if (--scoopCountdown <= 0) // fixed 32-sample steps: independent of host buffer size
             {
                 scoopCountdown = 32;
                 scoopDb += (scoopTarget - scoopDb) * (1.0 - std::exp (-32.0 / (0.03 * sr)));
                 scoop.peak (480.0, 0.6, scoopDb, sr);
             }
-            subXoDriven.split (scoop.tick (m[i] * norm), dLow, dHigh);
+            // Sub protection with a subtractive one-pole split (low + high = input exactly):
+            // a Linkwitz-Riley split here delayed the whole low end by ~5 ms against the attack.
+            const double dIn = scoop.tick (m[i] * norm);
+            dLow = lpD.tick (dIn);
+            dHigh = dIn - dLow;
             // BODY TONE: measured hard-techno kicks have a bright, distorted attack and a body
             // with strong lows, scooped mids (~1 kHz) and some top "fizz". After the first 4 ms
             // a wide mid scoop deepens towards the body tone (0 = -24 dB, 1 = no scoop).
@@ -683,19 +729,16 @@ private:
                 if (std::abs (depth - bodyScoopDb) > 0.05)
                 {
                     bodyScoopDb = depth;
-                    bodyScoop.peak (1000.0, 0.9, bodyScoopDb, sr);
+                    bodyScoop.set (1000.0, 0.9, bodyScoopDb, sr); // state-variable bell: no spike when it opens on a retrigger
                 }
                 dHigh = bodyScoop.tick (dHigh);
             }
-            subXoClean.split (cleanAligned, cLow, cHigh);
+            cLow = lpC.tick (cleanAligned);
             const double protect = 0.75 * std::sqrt (p.drive);
             double y = dHigh + dLow + (cLow - dLow) * protect;
-            // SUB LAYER: clean sine under the driven body. It gets the same LR4 phase as the
-            // body's low band (allpass), so the two add instead of cancelling.
+            // SUB LAYER: clean sine under the driven body, aligned with the oversampler latency.
             subDelay.push (subBuf[(size_t) i]);
-            double sLow, sHigh;
-            subXoSub.split (subDelay.read ((double) lat), sLow, sHigh);
-            y += sLow + sHigh;
+            y += subDelay.read ((double) lat);
 
             y = eq.tick (y);
             y = dc.tick (y) * outGain.next();
@@ -773,17 +816,18 @@ private:
 
     double sr = 48000.0, currentDrive = 1.0;
     int blockSize = 512, next = 0;
-    unsigned int seedCounter = 12345u;
+    static constexpr unsigned int clickSeed = 12345u + 0x6F4F2A1Bu; // the seed the first hit always had
     bool firstBlock = true;
     KickVoice voices[maxVoices];
     Rumble rumble;
     CharacterEq eq;
     StereoEngine stereo;
-    LR4 subXoClean, subXoDriven, subXoSub;
+    struct Lp1 { double z = 0.0, a = 0.0; void set (double f, double rate) { a = 1.0 - std::exp (-2.0 * pi * f / rate); } void reset() { z = 0.0; } double tick (double x) { z += a * (x - z); return z; } };
+    Lp1 lpD, lpC;
     DcBlock dc;
     Biquad scoop;
     double scoopDb = 0.0;
-    Biquad bodyScoop;
+    SvfBell bodyScoop;
     double bodyScoopDb = 0.0;
     double bodyToneSm = 1.0, bodyToneCoef = 0.999, sinceNote = 1.0e9;
     std::vector<double> noteTime;

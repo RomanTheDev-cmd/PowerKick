@@ -16,6 +16,8 @@ strongly the tone itself is heard over the low end.
                                                      penalty (target = their reference, or the nearest
                                                      in-range reference of the category when the
                                                      original reference is itself out of range)
+  python3 pitch_guard.py refit-all OUT.json          refits every reference-fitted preset (after an
+                                                     engine change) with the same limits
   python3 pitch_guard.py apply OUT.json              writes the refits into Source/Presets.cpp (new
                                                      name from the sound: the note changed), then
                                                      rebuild and run normalize_peaks.py
@@ -190,6 +192,61 @@ def refit(out_path, names):
     print("done in %.0f s" % (time.time() - t0))
 
 
+def refit_all(out_path):
+    """Refits every reference-fitted preset (after an engine change), keeping the kick-register
+    limits. Starts: the preset itself plus 60 other presets."""
+    refs = fk.load_refs()
+    by_base = {}
+    for x in refs:
+        by_base.setdefault(x["file"].split("/")[-1], []).append(x)
+    src = open(os.path.join(HERE, "..", "Source", "Presets.cpp")).read()
+    comments = dict(re.findall(r'\{ "([^"]+)",[^\n]*// fit [0-9.]+ to ([^\n(]+?)(?: \(kick register\))?\s*$', src, re.M))
+    presets = fk.load_presets()
+    own = {n: v for n, _, v in presets}
+    names = [n for n, _, _ in presets if comments.get(n, "") in by_base]
+    used = {comments[n] for n in names}
+    rng = np.random.default_rng(2026)
+    jobs, meta = [], []
+    for name in names:
+        cat = next(c for n, c, _ in presets if n == name)
+        orig = by_base[comments[name]][0]
+        target = orig
+        if excess(orig["feat"], cat) > 0:
+            ok = [x for x in refs if x["category"] == cat and excess(x["feat"], cat) == 0 and x["file"].split("/")[-1] not in used]
+            target = min(ok, key=lambda x: distance(x["feat"], orig["feat"]))
+            used.add(target["file"].split("/")[-1])
+        others = [own[n] for n in rng.choice(list(own), 60, replace=False)]
+        jobs.append((target["feat"], cat, [dict(own[name])] + [dict(o) for o in others], 9000 + len(jobs),
+                     int(os.environ.get("FIT_ITERS", 250))))
+        meta.append({"name": name, "category": cat, "medoid": target["file"], "original": orig["file"]})
+    # Every finished preset goes straight to OUT.jsonl: an interrupted run resumes where it stopped.
+    from concurrent.futures import as_completed
+    partial = out_path + "l"
+    done = {}
+    if os.path.exists(partial):
+        for line in open(partial):
+            if line.strip():
+                m = json.loads(line)
+                done[m["name"]] = m
+    todo = [i for i, m in enumerate(meta) if m["name"] not in done]
+    print("refitting %d presets (%d already done)" % (len(todo), len(done)), flush=True)
+    t0 = time.time()
+    with ProcessPoolExecutor(max_workers=int(os.environ.get("FIT_WORKERS", 9))) as ex, open(partial, "a") as log:
+        futures = {ex.submit(_job, jobs[i]): i for i in todo}
+        for k, fut in enumerate(as_completed(futures), 1):
+            m = dict(meta[futures[fut]])
+            p, d, e = fut.result()
+            m.update({"params": p, "distance": d, "excess": e})
+            log.write(json.dumps(m, ensure_ascii=False) + "\n")
+            log.flush()
+            done[m["name"]] = m
+            print("%3d/%d %-28s dist %.1f excess %.2f" % (k, len(todo), m["name"], d, e), flush=True)
+    meta = [done[m["name"]] for m in meta]
+    json.dump(meta, open(out_path, "w"), indent=1, ensure_ascii=False)
+    d = [m["distance"] for m in meta]
+    print("done in %.0f s: distance median %.2f, p90 %.2f, max excess %.2f" % (time.time() - t0, np.median(d), np.percentile(d, 90), max(m["excess"] for m in meta)))
+
+
 def apply(fit_json):
     from build_library import ORDER, group_of, lit, name_of
     path = os.path.join(HERE, "..", "Source", "Presets.cpp")
@@ -201,11 +258,16 @@ def apply(fit_json):
         if p.get("width", 0) < 3:
             p["width"], p["delay"] = 0.0, 0.0
         names.discard(m["name"])
-        base = n = name_of(p)
-        k = 2
-        while n in names:
-            n = "%s %s" % (base, ["II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"][min(k - 2, 10)])
-            k += 1
+        old_base = re.sub(r" (?:[IVX]+|\d+)$", "", m["name"])
+        if not re.search(r" [A-G]#?-?\d$", old_base) or old_base == name_of(p):
+            n = m["name"]  # hand-given name, or the descriptive name still fits the sound: keep it
+        else:
+            base = n = name_of(p)
+            k = 2
+            roman = ["II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]
+            while n in names:  # II..XII, then plain numbers (never loops)
+                n = "%s %s" % (base, roman[k - 2] if k - 2 < len(roman) else str(k))
+                k += 1
         names.add(n)
         row = '    { %-28s %-20s { %s }, "%s" }, // fit %.1f to %s (kick register)' % (
             '"%s",' % n, '"%s",' % m["category"], ", ".join(lit(k, p[k]) for k in ORDER), group_of(p),
@@ -223,3 +285,5 @@ if __name__ == "__main__":
         refit(sys.argv[2], sys.argv[3:])
     elif sys.argv[1] == "apply":
         apply(sys.argv[2])
+    elif sys.argv[1] == "refit-all":
+        refit_all(sys.argv[2])

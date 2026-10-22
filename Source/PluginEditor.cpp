@@ -281,7 +281,7 @@ AdvancedPanel::AdvancedPanel (juce::AudioProcessorValueTreeState& s)
       velSens (s, pk::id::velSens, "VELOCITY", "How much note velocity changes the level and the click", true),
       beatLength (s, pk::id::beatLength, { "OFF", "1/4", "1/8", "1/16" }, "The kick ends within this note value at the current tempo"),
       rumbleMode (s, pk::id::rumbleMode, { "CLASSIC", "REVERB" }, "Rumble engine: tuned comb tail or a diffuse dark reverb"),
-      choke (s, pk::id::choke, { "OFF", "ON" }, "A new hit cuts the previous one in 1 ms instead of 4 ms (tight rolls)"),
+      choke (s, pk::id::choke, { "OFF", "ON" }, "ON: a MIDI note-off cuts the kick, so the note length sets the kick length"),
       oversample (s, pk::id::oversample, { "2x", "4x", "8x" }, "Oversampling of the drive: higher = cleaner top, more CPU")
 {
     for (auto* c : std::initializer_list<juce::Component*> { &pitchDepth, &pitchTime, &pitchCurve, &pitchFall, &keyRoot, &clickTone,

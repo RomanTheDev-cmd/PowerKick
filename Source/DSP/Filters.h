@@ -121,6 +121,30 @@ private:
     }
 };
 
+// Peaking EQ as a TPT state-variable filter (A. Simper): the same response as the RBJ peak,
+// but its gain can change while a signal is passing without throwing a spike.
+struct SvfBell
+{
+    double ic1 = 0.0, ic2 = 0.0, a1 = 1.0, a2 = 0.0, a3 = 0.0, m1 = 0.0;
+    void set (double f, double q, double gainDb, double sr) noexcept
+    {
+        const double A = std::pow (10.0, gainDb / 40.0), g = std::tan (pi * std::min (f, sr * 0.45) / sr);
+        const double k = 1.0 / (q * A);
+        a1 = 1.0 / (1.0 + g * (g + k));
+        a2 = g * a1;
+        a3 = g * a2;
+        m1 = k * (A * A - 1.0);
+    }
+    void reset() noexcept { ic1 = ic2 = 0.0; }
+    double tick (double x) noexcept
+    {
+        const double v3 = x - ic2, v1 = a1 * ic1 + a2 * v3, v2 = ic2 + a2 * ic1 + a3 * v3;
+        ic1 = 2.0 * v1 - ic1;
+        ic2 = 2.0 * v2 - ic2;
+        return x + m1 * v1;
+    }
+};
+
 // One-pole DC blocker.
 struct DcBlock
 {
