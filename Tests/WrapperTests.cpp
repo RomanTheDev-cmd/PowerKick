@@ -51,6 +51,27 @@ Run play (PowerKickProcessor& p, int blocks, int every = 9600, std::function<voi
     return r;
 }
 
+void testDefaultsMatchDefaultPreset()
+{
+    // A fresh instance and every double-click reset must sound like the default preset.
+    PowerKickProcessor p;
+    const pk::Preset* def = nullptr;
+    for (const auto& pr : pk::factoryPresets())
+        if (pr.name == "Hard Techno Core") def = &pr;
+    expect (def != nullptr, "default preset Hard Techno Core exists");
+    if (def == nullptr) return;
+    expect (p.getPresetName() == "Hard Techno Core", "a fresh instance shows Hard Techno Core");
+    for (const auto& pid : pk::allParamIds())
+    {
+        auto* prm = p.state.getParameter (pid);
+        const auto it = def->values.find (pid);
+        if (it == def->values.end()) continue; // unlisted: the default by definition
+        const float want = prm->convertTo0to1 (it->second), have = prm->getDefaultValue(); // double-click reset target
+        expect (std::abs (want - have) < 0.002f, "default " + pid + " = Hard Techno Core (" + juce::String (prm->convertFrom0to1 (have), 3)
+                                                 + " vs " + juce::String (it->second, 3) + ")");
+    }
+}
+
 void testStateRoundTrip()
 {
     PowerKickProcessor a;
@@ -204,6 +225,7 @@ void testEditor()
 
 int main()
 {
+    testDefaultsMatchDefaultPreset();
     testStateRoundTrip();
     testLegacyProjectMigration();
     testPresetSwitchingWhilePlaying();
