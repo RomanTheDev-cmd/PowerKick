@@ -502,8 +502,9 @@ class KickEngine
 public:
     static constexpr int maxVoices = 2;
 
-    void prepare (double sampleRate, int maxBlock)
+    void prepare (double sampleRate, int maxBlock, int initialOversampleIndex = 1)
     {
+        activeOs = juce::jlimit (0, 2, initialOversampleIndex);
         sr = sampleRate;
         blockSize = std::max (16, maxBlock);
         for (auto& v : voices) v.prepare (sr);
@@ -515,6 +516,7 @@ public:
         mono.setSize (1, blockSize);
         clean.assign ((size_t) blockSize, 0.0);
         noteTime.assign ((size_t) blockSize, 1.0e9);
+        handoffGain.assign ((size_t) blockSize, 1.0);
         bodyToneCoef = std::exp (-1.0 / (0.02 * sr));
         for (int i = 0; i < 3; ++i) // 2x / 4x / 8x
         {
@@ -543,14 +545,16 @@ public:
         subDelay.reset();
         modWheel = 0.0; lastVel = 1.0;
         pending = {};
+        handoffFramesLeft = 0;
+        postHandoffGain = 1.0;
         firstBlock = true;
     }
 
     int getLatencySamples() const { return osLatency(); }
 
     // A new hit on top of a still-sounding one is a clean hand-off: the old body fades out in 1 ms
-    // and the new hit starts right after it. Summing a fresh attack onto a body that still holds
-    // its level added up to +6 dB on rolls; with the hand-off a roll peaks like a single hit.
+    // and the new hit starts right after it. The complete old path fades too: retained filter
+    // energy must not add to the next attack.
     // The 1 ms delay only applies when the previous hit is still audible (not in a 4/4 pattern
     // whose kicks have ended).
     void noteOn (const KickParams& p, int note, float velocity, double bpm = 140.0)
@@ -558,12 +562,14 @@ public:
         lastVel = juce::jlimit (0.0, 1.0, (double) velocity);
         double sounding = 0.0;
         for (auto& v : voices) sounding = std::max (sounding, v.level());
-        if (sounding > 0.01) // above -40 dB: hand off
+        if (sounding > 0.01 || handoffFramesLeft > 0) // finish an existing fade before replacing its pending hit
         {
             for (auto& v : voices) v.release (handOffSeconds);
-            pending = { true, note, velocity, bpm, (int) std::ceil (handOffSeconds * sr) };
+            if (handoffFramesLeft == 0) handoffFramesLeft = (int) std::ceil (handOffSeconds * sr);
+            pending = { true, note, velocity, bpm, handoffFramesLeft };
             return;
         }
+        pending.active = false;
         for (auto& v : voices) v.release (0.004);
         startVoice (p, note, velocity, bpm);
     }
@@ -585,8 +591,16 @@ public:
         auto it = midi.findNextSamplePosition (midiOffset);
         while (done < numSamples)
         {
-            const int len = std::min (blockSize, numSamples - done);
-            renderChunk (outL + done, outR + done, len, midi, it, midiOffset + done, p, bpm, monoCheck);
+            int len = std::min (blockSize, numSamples - done);
+            const int start = midiOffset + done;
+            if (it != midi.cend())
+            {
+                const int untilEvent = (*it).samplePosition - start;
+                len = std::min (len, std::max (1, untilEvent));
+            }
+            if (handoffFramesLeft > 1)
+                len = std::min (len, handoffFramesLeft - 1);
+            renderChunk (outL + done, outR + done, len, midi, it, start, p, bpm, monoCheck);
             done += len;
         }
     }
@@ -595,10 +609,28 @@ private:
     static constexpr double handOffSeconds = 0.001;
     struct Pending { bool active = false; int note = 60; float velocity = 1.0f; double bpm = 140.0; int countdown = 0; };
     Pending pending;
+    int handoffFramesLeft = 0;
+    double postHandoffGain = 1.0;
+
+    void resetSignalPath()
+    {
+        for (auto& v : voices) v.prepare (sr);
+        rumble.reset();
+        oversamplers[activeOs]->reset(); // the others are reset when they are switched in
+        cleanDelay.reset(); subDelay.reset();
+        lpD.reset(); lpC.reset(); dc.reset();
+        scoop.reset(); scoopDb = 0.0; scoopCountdown = 0;
+        scoop.peak (480.0, 0.6, 0.0, sr);
+        bodyScoop = SvfBell(); bodyScoopDb = 0.0;
+        eq.prepare (sr);
+        stereo.reset();
+        firstBlock = true;
+    }
 
     void startVoice (const KickParams& p, int note, float velocity, double bpm)
     {
         sinceNote = 0.0;
+        postHandoffGain = 1.0;
         // Prefer a free slot; otherwise steal the older (already fading) one.
         auto& v = ! voices[next].isActive() ? voices[next] : voices[1 - next];
         // The click noise is the same on every hit (as in a sample, and as the presets were
@@ -611,6 +643,9 @@ private:
     void renderChunk (float* outL, float* outR, int len, const juce::MidiBuffer& midi, juce::MidiBufferIterator& it,
                       int chunkStart, const KickParams& p, double bpm, bool monoCheck)
     {
+        // Clear the old signal only between complete DSP chunks, after its output faded.
+        if (handoffFramesLeft == 1)
+            resetSignalPath();
         rumble.setBlockParams (p, bpm);
         eq.setTarget (p.charMode, p.character);
         stereo.setTargets (p.width * 0.01, p.delayMs, p.splitHz, firstBlock);
@@ -656,11 +691,14 @@ private:
                 }
                 ++it;
             }
+            if (handoffFramesLeft > 0)
+                postHandoffGain = (double) --handoffFramesLeft / std::ceil (handOffSeconds * sr);
             if (pending.active && --pending.countdown <= 0)
             {
                 pending.active = false;
                 startVoice (p, pending.note, pending.velocity, pending.bpm);
             }
+            handoffGain[(size_t) i] = postHandoffGain;
             double bodySum = 0.0, clickSum = 0.0, envSum = 0.0, subSum = 0.0;
             for (auto& v : voices)
             {
@@ -747,6 +785,8 @@ private:
             stereo.tick (y, l, r);
             if (monoCheck) l = r = 0.5 * (l + r);
             // Linked emergency ceiling: one gain for both channels, never a side signal.
+            l *= handoffGain[(size_t) i];
+            r *= handoffGain[(size_t) i];
             const double pk = std::max (std::abs (l), std::abs (r));
             const double lim = pk > 0.9 ? safety (pk) / pk : 1.0;
             outL[i] = (float) (l * lim);
@@ -831,6 +871,7 @@ private:
     double bodyScoopDb = 0.0;
     double bodyToneSm = 1.0, bodyToneCoef = 0.999, sinceNote = 1.0e9;
     std::vector<double> noteTime;
+    std::vector<double> handoffGain;
     int scoopCountdown = 0;
     Ramp driveGain, outGain;
     DelayLine cleanDelay = makeDelay();

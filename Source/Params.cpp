@@ -72,7 +72,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (unit (id::character, "Character", 0.8f));
     layout.add (unit (id::rumble, "Rumble", 0.0f));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::output, 1 }, "Output",
-                                       juce::NormalisableRange<float> (-24.0f, 6.0f, 0.1f), -5.2f,
+                                       juce::NormalisableRange<float> (-24.0f, 6.0f, 0.1f), -3.1f,
                                        Attr().withLabel ("dB").withStringFromValueFunction ([] (float v, int)
                                        { return juce::String (v, 1) + " dB"; })));
     layout.add (std::make_unique<APF> (juce::ParameterID { id::width, 1 }, "Stereo Width",

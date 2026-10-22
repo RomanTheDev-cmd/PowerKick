@@ -155,10 +155,13 @@ struct DcBlock
 };
 
 // Fractional delay line, cubic (Hermite) interpolation.
+// reset() is O(1): samples older than the last reset read as zero instead of being cleared. The
+// engine resets the whole path in the audio thread on every hand-off between hits, and clearing
+// the 1.2 s rumble line alone would touch 2 MB at 192 kHz.
 struct DelayLine
 {
     std::vector<double> buf;
-    int w = 0, mask = 0;
+    int w = 0, mask = 0, filled = 0; // filled: samples pushed since the last reset (saturates at size)
 
     void prepare (int maxSamples)
     {
@@ -167,16 +170,22 @@ struct DelayLine
         buf.assign ((size_t) size, 0.0);
         mask = size - 1;
         w = 0;
+        filled = 0;
     }
-    void reset() { std::fill (buf.begin(), buf.end(), 0.0); w = 0; }
-    void push (double x) noexcept { buf[(size_t) w] = x; w = (w + 1) & mask; }
+    void reset() noexcept { w = 0; filled = 0; }
+    void push (double x) noexcept
+    {
+        buf[(size_t) w] = x;
+        w = (w + 1) & mask;
+        if (filled <= mask) ++filled;
+    }
     // Read 'd' samples behind the most recently pushed sample.
     double read (double d) const noexcept
     {
         d = std::max (d, 0.0);
         const int di = (int) d;
         const double f = d - di;
-        auto at = [this] (int k) { return buf[(size_t) ((w - 1 - k) & mask)]; };
+        auto at = [this] (int k) { return k < filled ? buf[(size_t) ((w - 1 - k) & mask)] : 0.0; };
         const double xm1 = at (di - 1 < 0 ? 0 : di - 1), x0 = at (di), x1 = at (di + 1), x2 = at (di + 2);
         if (di == 0) // no future sample available: linear
             return x0 + f * (x1 - x0);

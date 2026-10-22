@@ -224,15 +224,19 @@ void testRetriggerPeaks()
 {
     // Rolls on 16ths and 32nds at 150 BPM: overlapping hits must not reach the emergency ceiling
     // (0.9), which would otherwise shape the sound.
-    int bad = 0;
-    double worst = 0.0;
-    juce::String worstName;
+    // The factory level (Tools/normalize_peaks.py) puts the loudest of these cases and single hits at
+    // velocities 1.0 / 0.85 / 0.7 at -1 dBFS (OUTPUT rounded down to its 0.1 dB step).
+    int bad = 0, offLevel = 0;
+    double worst = 0.0, quietest = 1.0;
+    juce::String worstName, quietestName;
     for (const auto& pr : factoryPresets())
     {
         const auto p = paramsFromSnapshot (pr.values);
+        double loudest = 0.0;
         for (int step : { 4800, 2400 })
         {
             const double pk = std::max (retriggerPeak (p, step, 150.0), retriggerPeak (p, step, 150.0, true));
+            loudest = std::max (loudest, pk);
             if (pk > worst) { worst = pk; worstName = pr.name; }
             if (pk > 0.9)
             {
@@ -240,9 +244,106 @@ void testRetriggerPeaks()
                 std::cout << "  retrigger " << (step == 4800 ? "1/16" : "1/32") << " " << pr.name << ": " << juce::String (db (pk), 2) << " dBFS\n";
             }
         }
+        auto probe = p; probe.outputDb -= 24.0f;
+        for (float velocity : { 1.0f, 0.85f, 0.7f })
+        {
+            const auto hit = stream (probe, 48000.0, 512, 1, 0, 140.0, velocity);
+            loudest = std::max (loudest, std::max (hit.getMagnitude (0, 0, 28800), hit.getMagnitude (1, 0, 28800))
+                                             * std::pow (10.0, 24.0 / 20.0));
+        }
+        if (loudest < quietest) { quietest = loudest; quietestName = pr.name; }
+        if (db (loudest) <= -1.15 || db (loudest) > -0.95)
+        {
+            ++offLevel;
+            if (offLevel <= 5)
+                std::cout << "  factory level " << pr.name << ": " << juce::String (db (loudest), 2) << " dBFS\n";
+        }
     }
     expect (bad == 0, "rolls on 16ths/32nds stay under the emergency ceiling (" + juce::String (bad) + " cases over, worst "
                       + worstName + " " + juce::String (db (worst), 2) + " dBFS)");
+    expect (offLevel == 0, "every factory preset peaks at -1 dBFS over single hits and rolls (" + juce::String (offLevel)
+                           + " presets off, quietest " + quietestName + " " + juce::String (db (quietest), 2) + " dBFS)");
+}
+
+void testWholeChainHandoff()
+{
+    // Probe before the emergency ceiling: clipping must not hide retained filter energy.
+    for (const char* name : { "Warm Click F#1 III", "Classic Punch" })
+    {
+        auto p = preset (name); p.outputDb -= 24.0f;
+        const int step = 1714, onset = step + 47; // 1 ms hand-off at 48 kHz
+        const auto single = stream (p, 48000, 127, 1, 0, 210.0);
+        const auto baseline = stream (p, 48000, 127, 1, step, 210.0);
+        expect (stats (baseline).peak * std::pow (10.0, 24.0 / 20.0) <= 0.9,
+                juce::String (name) + ": 210 BPM roll does not reach the emergency ceiling");
+        double diff = 0.0;
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < 480; ++i)
+                diff = std::max (diff, std::abs ((double) baseline.getSample (c, onset + i) - single.getSample (c, i)));
+        expect (diff < 1.0e-5, juce::String (name) + ": a repeated hit starts with a fresh complete signal path (difference "
+                + juce::String (diff, 8) + ")");
+        for (int block : { 32, 512, 1024 })
+        {
+            const auto other = stream (p, 48000, block, 1, step, 210.0);
+            double blockDiff = 0.0;
+            for (int c = 0; c < 2; ++c)
+                for (int i = 0; i < baseline.getNumSamples(); ++i)
+                    blockDiff = std::max (blockDiff, std::abs ((double) baseline.getSample (c, i) - other.getSample (c, i)));
+            expect (blockDiff < 1.0e-5, juce::String (name) + ": hand-off is independent of host block " + juce::String (block));
+        }
+    }
+    // A smooth, click-free source isolates a discontinuity from intentional noisy attacks.
+    auto p = preset ("Hard Techno Core");
+    p.drive = 0; p.character = 0; p.bodyTone = 1; p.rumble = 0; p.click = 0; p.width = 0;
+    p.punch = 0; p.pitchDepth = 0; p.pitchFall = 0; p.outputDb = -12;
+    const auto single = stream (p, 48000, 127, 1);
+    const auto roll = stream (p, 48000, 127, 1, 1714);
+    double jump = 0.0;
+    for (int i = 1714; i < 1714 + 96; ++i)
+        jump = std::max (jump, std::abs ((double) roll.getSample (0, i) - roll.getSample (0, i - 1)));
+    // Two 1 ms fades plus the sine slope bound the expected sample-to-sample change.
+    const double limit = stats (single).peak * (3.0 / 48.0 + 2.0 * dsp::pi * baseFrequency (p.tune) / 48000.0);
+    expect (jump <= limit, "complete hand-off has no hard cut in the clean body (jump " + juce::String (jump, 6) + ")");
+}
+
+void testCancelledHandoffStaysSmooth()
+{
+    KickParams p;
+    p.drive = 0; p.character = 0; p.bodyTone = 1; p.rumble = 0; p.click = 0; p.width = 0;
+    p.punch = 0; p.pitchDepth = 0; p.pitchFall = 0; p.outputDb = -12; p.choke = true;
+    const auto single = stream (p, 48000, 127, 1);
+    const double limit = stats (single).peak * (3.0 / 48.0 + 2.0 * dsp::pi * baseFrequency (p.tune) / 48000.0);
+    for (int cancel = 0; cancel < 6; ++cancel)
+    for (int cancelAt : { 1738, 1755, 1761 })
+    {
+        dsp::KickEngine e; e.prepare (48000, 127);
+        juce::AudioBuffer<float> out (2, 4096);
+        for (int pos = 0; pos < out.getNumSamples(); pos += 127)
+        {
+            const int len = std::min (127, out.getNumSamples() - pos);
+            juce::MidiBuffer m;
+            for (int t : { 0, 1714 })
+                if (t >= pos && t < pos + len) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), t - pos);
+            if (cancelAt >= pos && cancelAt < pos + len)
+            {
+                const int at = cancelAt - pos;
+                if (cancel == 0 || cancel == 4) m.addEvent (juce::MidiMessage::noteOff (1, 60), at);
+                if (cancel == 1) m.addEvent (juce::MidiMessage::allNotesOff (1), at);
+                if (cancel == 2) m.addEvent (juce::MidiMessage::allSoundOff (1), at);
+                if (cancel >= 3) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), at);
+                if (cancel == 5) m.addEvent (juce::MidiMessage::noteOff (1, 60), at);
+            }
+            e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), len, m, 0, p, 140, false);
+        }
+        double jump = 0.0;
+        for (int i = 1714; i < 1800; ++i)
+            jump = std::max (jump, std::abs ((double) out.getSample (0, i) - out.getSample (0, i - 1)));
+        expect (jump <= limit, "cancel " + juce::String (cancel) + ": cancelling a pending hit never restores the fading output gain (jump "
+                + juce::String (jump, 6) + ")");
+        const double remaining = out.getMagnitude (0, 1800, 400);
+        expect (cancel == 3 || cancel == 4 ? remaining > 1.0e-3 : remaining < 1.0e-6,
+                "cancel " + juce::String (cancel) + ": event order preserves replacement notes and suppresses cancelled hits");
+    }
 }
 
 void testWidthZeroIsTrueMono()
@@ -657,14 +758,16 @@ void testStereoSplit()
 }
 
 // ---- ADVANCED features: each is neutral by default, so the 300 presets keep their sound.
-// Fingerprints taken 2026-10-22 after the chain without low-end delay and the full refit.
+// Fingerprints taken 2026-10-22 after the whole-chain hand-off and the level pass that followed it.
+// Only OUTPUT changed: energy and samples equal the previous fingerprints times the OUTPUT step exactly
+// (the trimmed length grows a little because a louder tail stays above the trim threshold longer).
 struct Fingerprint { const char* name; int length; double energy, s0, s1; };
 const Fingerprint fingerprints[] = {
-{ "Hard Techno Core", 23369, 4651.3739736222133, 0.593998611, -0.399458647 },
-{ "Classic Punch", 35246, 4333.6229538089819, 0.835408568, 0.399561167 },
-{ "Classic Schranz", 21448, 4079.3667284940884, -0.14877364, 0.227083951 },
-{ "Industrial Rumble", 34386, 5430.3677036759982, -0.505761802, 0.462805092 },
-{ "Gabba Lite", 25159, 3272.8972305468687, -0.303709507, 0.353954315 },
+{ "Hard Techno Core", 23520, 7543.6451168423609, 0.756459057, -0.508711815 },
+{ "Classic Punch", 35265, 4643.5606063465666, 0.864766657, 0.413602620 },
+{ "Classic Schranz", 21542, 5255.2423894902031, -0.168859690, 0.257742733 },
+{ "Industrial Rumble", 34425, 6680.8119497012085, -0.560978234, 0.513331771 },
+{ "Gabba Lite", 25372, 6381.6410432162120, -0.424090356, 0.494250596 },
 };
 
 void testExistingSoundUnchanged()
@@ -678,7 +781,9 @@ void testExistingSoundUnchanged()
         // energy ~1e-7 relative, samples ~1e-5, i.e. around -100 dB); any real change is far larger.
         const bool same = a.getNumSamples() == f.length && std::abs (e - f.energy) <= 1.0e-6 * f.energy
                           && std::abs (a.getSample (0, 2000) - f.s0) < 1.0e-4 && std::abs (a.getSample (1, 9000) - f.s1) < 1.0e-4;
-        expect (same, juce::String (f.name) + ": sound unchanged by the new (neutral) features");
+        expect (same, juce::String (f.name) + ": sound unchanged by the new (neutral) features (now "
+                + juce::String (a.getNumSamples()) + ", " + juce::String (e, 13) + ", "
+                + juce::String (a.getSample (0, 2000), 9) + ", " + juce::String (a.getSample (1, 9000), 9) + ")");
     }
 }
 
@@ -1153,6 +1258,8 @@ int main (int argc, char** argv)
     testPitchFall();
     testPresetsStayInKickRegister();
     testRetriggerPeaks();
+    testWholeChainHandoff();
+    testCancelledHandoffStaysSmooth();
     testDriveSweepIsSmooth();
     testStereoControlsAreAudible();
     testStereoSplit();
