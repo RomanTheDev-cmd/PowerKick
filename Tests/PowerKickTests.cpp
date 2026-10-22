@@ -122,18 +122,25 @@ KickParams preset (const char* name)
     return {};
 }
 
-// Streams one hit through the engine with a chosen host buffer size.
-juce::AudioBuffer<float> stream (const KickParams& p, double sr, int hostBlock, int seconds = 1)
+// Streams one hit (or, with step > 0, a roll: a full-velocity hit every `step` samples) through the
+// engine with a chosen host buffer size.
+juce::AudioBuffer<float> stream (const KickParams& p, double sr, int hostBlock, int seconds = 1, int step = 0, double bpm = 140.0,
+                                 float velocity = 1.0f, bool alternate = false)
 {
     dsp::KickEngine e;
     e.prepare (sr, hostBlock);
     const int total = (int) (sr * seconds);
     juce::AudioBuffer<float> out (2, total + hostBlock);
-    juce::MidiBuffer on, none;
-    on.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+    int hit = 0;
     for (int pos = 0; pos < total; pos += hostBlock)
-        e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), hostBlock, pos == 0 ? on : none, 0, p,
-                   140.0, false);
+    {
+        juce::MidiBuffer m;
+        for (int t = pos; t < pos + hostBlock; ++t)
+            if (t == 0 || (step > 0 && t % step == 0))
+                // alternate: hits 1.0 / velocity / 1.0 / ... (accented rolls); otherwise every hit at velocity
+                m.addEvent (juce::MidiMessage::noteOn (1, 60, alternate && (hit++ % 2) == 0 ? 1.0f : velocity), t - pos);
+        e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), hostBlock, m, 0, p, bpm, false);
+    }
     out.setSize (2, total, true);
     return out;
 }
@@ -190,6 +197,52 @@ void testPresetsRender (bool report)
                       << " dB\n";
         }
     }
+}
+
+// Peak a preset would reach with hits every `step` samples (velocities alternating 1.0 / 0.8), measured
+// 24 dB under its OUTPUT so the emergency ceiling cannot hide it (OUTPUT is linear after the drive).
+double retriggerPeak (KickParams p, int step, double bpm, bool fullVelocity = false)
+{
+    p.outputDb -= 24.0f;
+    dsp::KickEngine e;
+    e.prepare (48000.0, 512);
+    const int total = 96256; // a whole number of 512-sample blocks
+    juce::AudioBuffer<float> out (2, total);
+    int hit = 0;
+    for (int pos = 0; pos < total; pos += 512)
+    {
+        juce::MidiBuffer m;
+        for (int t = pos; t < pos + 512; ++t)
+            if (t % step == 0)
+                m.addEvent (juce::MidiMessage::noteOn (1, 60, (fullVelocity || (hit++ % 2) == 0) ? 1.0f : 0.8f), t - pos);
+        e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 512, m, 0, p, bpm, false);
+    }
+    return std::max (out.getMagnitude (0, 0, total), out.getMagnitude (1, 0, total)) * std::pow (10.0, 24.0 / 20.0);
+}
+
+void testRetriggerPeaks()
+{
+    // Rolls on 16ths and 32nds at 150 BPM: overlapping hits must not reach the emergency ceiling
+    // (0.9), which would otherwise shape the sound.
+    int bad = 0;
+    double worst = 0.0;
+    juce::String worstName;
+    for (const auto& pr : factoryPresets())
+    {
+        const auto p = paramsFromSnapshot (pr.values);
+        for (int step : { 4800, 2400 })
+        {
+            const double pk = std::max (retriggerPeak (p, step, 150.0), retriggerPeak (p, step, 150.0, true));
+            if (pk > worst) { worst = pk; worstName = pr.name; }
+            if (pk > 0.9)
+            {
+                ++bad;
+                std::cout << "  retrigger " << (step == 4800 ? "1/16" : "1/32") << " " << pr.name << ": " << juce::String (db (pk), 2) << " dBFS\n";
+            }
+        }
+    }
+    expect (bad == 0, "rolls on 16ths/32nds stay under the emergency ceiling (" + juce::String (bad) + " cases over, worst "
+                      + worstName + " " + juce::String (db (worst), 2) + " dBFS)");
 }
 
 void testWidthZeroIsTrueMono()
@@ -337,6 +390,7 @@ void testSettledPitch()
     {
         auto p = preset ("Classic Punch");
         p.pitchFall = 0.0f;
+        p.rumble = 0.0f; // the rumble tail has its own frequencies: measure the body alone
         const double expected = baseFrequency (p.tune);
         const auto a = renderKick (p, sr, 140.0, false);
         const float* x = a.getReadPointer (0);
@@ -565,8 +619,13 @@ void testStereoControlsAreAudible()
     p.rumble = 0.0f;
     p.width = 100.0f; p.delayMs = 0.0f; p.splitHz = 500.0f; // the WIDTH knob itself, at the default SPLIT
     const auto wide = renderKick (p, 48000.0, 140.0, true);
-    const double whole = sideToMidDb (wide, 20, 16000);
-    expect (whole >= -20.0, "WIDTH 100% is clearly audible on a kick (side " + juce::String (whole, 1) + " dB re mid)");
+    // WIDTH acts above SPLIT (the sub always stays mono), so that is where it must be clearly audible.
+    const double above = sideToMidDb (wide, 500, 16000);
+    p.width = 0.0f;
+    const double narrow = sideToMidDb (renderKick (p, 48000.0, 140.0, true), 500, 16000);
+    p.width = 100.0f;
+    std::printf ("  WIDTH 100%%: side/mid above SPLIT %.1f dB (WIDTH 0: %.1f dB)\n", above, narrow);
+    expect (above >= -10.0, "WIDTH 100% is clearly audible above SPLIT (side " + juce::String (above, 1) + " dB re mid)");
     p.delayMs = 5.0f;
     const auto delayed = renderKick (p, 48000.0, 140.0, true);
     const double gain = sideToMidDb (delayed, 500, 16000) - sideToMidDb (wide, 500, 16000);
@@ -598,13 +657,14 @@ void testStereoSplit()
 }
 
 // ---- ADVANCED features: each is neutral by default, so the 300 presets keep their sound.
+// Fingerprints taken 2026-10-22 after the chain without low-end delay and the full refit.
 struct Fingerprint { const char* name; int length; double energy, s0, s1; };
 const Fingerprint fingerprints[] = {
-{ "Hard Techno Core", 36156, 4967.8316019198019, 0.0219133236, 0.516940773 },
-{ "Classic Punch", 34197, 3540.8241718909485, -0.747925818, -0.168373674 },
-{ "Classic Schranz", 32195, 2166.5017299954002, -0.530174553, -0.186853409 },
-{ "Industrial Rumble", 34022, 3810.2010239803653, 0.267664284, 0.308782578 },
-{ "Gabba Lite", 25768, 1774.7198351118495, 0.233158618, -0.214758933 },
+{ "Hard Techno Core", 23369, 4651.3739736222133, 0.593998611, -0.399458647 },
+{ "Classic Punch", 35246, 4333.6229538089819, 0.835408568, 0.399561167 },
+{ "Classic Schranz", 21448, 4079.3667284940884, -0.14877364, 0.227083951 },
+{ "Industrial Rumble", 34386, 5430.3677036759982, -0.505761802, 0.462805092 },
+{ "Gabba Lite", 25159, 3272.8972305468687, -0.303709507, 0.353954315 },
 };
 
 void testExistingSoundUnchanged()
@@ -721,18 +781,42 @@ void testAdvancedFeatures()
         return segDb (out, 0.03, 0.2, 1000, 4000) - segDb (out, 0.03, 0.2, 30, 120); };
       expect (run (127) - run (0) >= 3.0, "MOD WHEEL DRIVE adds drive"); }
 
-    // Choke: the previous hit is gone faster after a retrigger.
+    // CHOKE: a note-off cuts the kick, so the MIDI note length sets the kick length.
     { auto run = [] (bool choke)
-      { auto p = preset ("Deep Drop"); p.choke = choke; p.outputDb = -12.0f; p.click = 0.0f; p.velSens = 1.0f; p.rumble = 0.0f;
-        p.drive = 0.0f; p.character = 0.0f; // drive would lift the quiet fade back up and hide it
-        dsp::KickEngine e; e.prepare (48000, 64); juce::AudioBuffer<float> out (2, 9600);
-        for (int pos = 0; pos < 9600; pos += 64)
-        { juce::MidiBuffer m; // the second hit is almost silent: the window then shows only the first hit's tail
+      { auto p = preset ("Deep Drop"); p.choke = choke; p.outputDb = -12.0f; p.rumble = 0.0f;
+        dsp::KickEngine e; e.prepare (48000, 64); juce::AudioBuffer<float> out (2, 19200);
+        const int lat = e.getLatencySamples();
+        for (int pos = 0; pos < 19200; pos += 64)
+        { juce::MidiBuffer m;
           if (pos == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
-          if (pos == 4800) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 1), 0); // velocity 1/127 (0 would be a note-off)
+          if (pos == 4800) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
           e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 64, m, 0, p, 140, false); }
-        return rms (out, 4800 + 96, 4800 + 144); };
-      expect (run (true) < run (false) * 0.8, "CHOKE cuts the previous hit faster (" + juce::String (run (true), 4) + " vs " + juce::String (run (false), 4) + ")"); }
+        return rms (out, 4800 + lat + 480, 4800 + lat + 1440); }; // 10-30 ms after the note-off
+      expect (run (false) > 0.05, "without CHOKE the kick ignores the note-off (" + juce::String (run (false), 4) + ")");
+      // The rest is the DC blocker settling after the cut (any high-pass does that): at least 15 dB down.
+      expect (run (true) < run (false) * 0.18, "CHOKE: note-off cuts the kick (" + juce::String (run (true), 5) + " vs " + juce::String (run (false), 4) + ")"); }
+
+    // Hand-off: a hit after the previous one has ended starts on time; one on top of a sounding
+    // hit starts after the 1 ms fade of the old body, never later.
+    { auto onset = [] (int secondAt)
+      { auto p = preset ("Hard Techno Core"); p.rumble = 0.0f; p.outputDb = -12.0f; p.decay = 0.2f;
+        dsp::KickEngine e; e.prepare (48000, 64); juce::AudioBuffer<float> out (2, 48000);
+        for (int pos = 0; pos < 48000; pos += 64)
+        { juce::MidiBuffer m;
+          if (pos == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+          if (pos == secondAt) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+          e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 64, m, 0, p, 140, false); }
+        // first sample of the second hit: compare with a render without it
+        dsp::KickEngine f; f.prepare (48000, 64); juce::AudioBuffer<float> ref (2, 48000);
+        for (int pos = 0; pos < 48000; pos += 64)
+        { juce::MidiBuffer m; if (pos == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+          f.process (ref.getWritePointer (0, pos), ref.getWritePointer (1, pos), 64, m, 0, p, 140, false); }
+        for (int i = secondAt; i < 48000; ++i)
+          if (std::abs (out.getSample (0, i) - ref.getSample (0, i)) > 1.0e-4f) return i - secondAt;
+        return -1; };
+      const int ended = onset (24000), sounding = onset (2432); // block-aligned positions
+      expect (ended >= 0 && ended <= 8, "a hit after the previous one ended starts on time (" + juce::String (ended) + " samples + latency)");
+      expect (sounding >= 0 && sounding <= ended + 49, "a hit on a sounding one starts within 1 ms (" + juce::String (sounding) + " samples)"); }
 
     // Reverb rumble: smoother tail than the comb rumble, sub still mono.
     { auto ripple = [] (const juce::AudioBuffer<float>& x)
@@ -835,6 +919,161 @@ int main (int argc, char** argv)
         }
         return 0;
     }
+    if (argc > 2 && juce::String (argv[1]) == "--cut")
+    {
+        // Diagnostic: how long the output keeps sounding after the voice is cut (note-off, CHOKE).
+        auto base = preset (argv[2]);
+        auto run = [] (const char* what, KickParams p)
+        {
+            p.choke = true; p.rumble = 0.0f; p.outputDb = -12.0f;
+            dsp::KickEngine e; e.prepare (48000.0, 64);
+            const int n = 9600;
+            juce::AudioBuffer<float> out (2, n);
+            for (int pos = 0; pos < n; pos += 64)
+            {
+                juce::MidiBuffer m;
+                if (pos == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+                if (pos == 4800) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+                e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 64, m, 0, p, 140.0, false);
+            }
+            const int c = 4800 + e.getLatencySamples();
+            const double before = rms (out, c - 960, c);
+            std::printf ("%-18s", what);
+            const double w[6][2] = { { 4, 6 }, { 6, 8 }, { 8, 12 }, { 12, 20 }, { 20, 40 }, { 40, 80 } };
+            for (auto& x : w)
+                std::printf ("  %2.0f-%2.0f ms %6.1f", x[0], x[1], db (rms (out, c + (int) (x[0] * 48), c + (int) (x[1] * 48))) - db (before));
+            std::printf ("  dB\n");
+        };
+        {
+            // Millisecond view around the cut: output vs the voice's own (pre-processing) signal.
+            auto p = base; p.choke = true; p.rumble = 0.0f; p.outputDb = -12.0f; p.drive = 0.0f; p.character = 0.0f; p.bodyTone = 1.0f; p.width = 0.0f; p.click = 0.0f;
+            dsp::KickEngine e; e.prepare (48000.0, 64);
+            juce::AudioBuffer<float> out (2, 9600);
+            for (int pos = 0; pos < 9600; pos += 64)
+            {
+                juce::MidiBuffer m;
+                if (pos == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+                if (pos == 4800) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+                e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 64, m, 0, p, 140.0, false);
+            }
+            std::printf ("latency %d samples\n", e.getLatencySamples());
+            std::printf ("onset (first |x| > 1e-4): sample %d\n", [&] { for (int i = 0; i < 9600; ++i) if (std::abs (out.getSample (0, i)) > 1.0e-4f) return i; return -1; }());
+            std::printf ("ms after cut, peak per ms:");
+            for (int k = -4; k < 24; ++k)
+                std::printf (" %d:%.3f", k, out.getMagnitude (0, 4800 + k * 48, 48));
+            std::printf ("\n");
+            // Same render without CHOKE: the difference is what the cut removed.
+            p.choke = false;
+            dsp::KickEngine f; f.prepare (48000.0, 64);
+            juce::AudioBuffer<float> ref (2, 9600);
+            for (int pos = 0; pos < 9600; pos += 64)
+            {
+                juce::MidiBuffer m;
+                if (pos == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+                if (pos == 4800) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+                f.process (ref.getWritePointer (0, pos), ref.getWritePointer (1, pos), 64, m, 0, p, 140.0, false);
+            }
+            std::printf ("without choke, peak per ms:");
+            for (int k = -4; k < 24; ++k)
+                std::printf (" %d:%.3f", k, ref.getMagnitude (0, 4800 + k * 48, 48));
+            std::printf ("\nfirst sample that differs: %d\n", [&] { for (int i = 0; i < 9600; ++i) if (std::abs (out.getSample (0, i) - ref.getSample (0, i)) > 1.0e-6f) return i; return -1; }());
+        }
+        run ("as is", base);
+        { auto q = base; q.character = 0.0f; run ("no character", q); }
+        { auto q = base; q.drive = 0.0f; run ("no drive", q); }
+        { auto q = base; q.bodyTone = 1.0f; run ("no body scoop", q); }
+        { auto q = base; q.width = 0.0f; run ("width 0", q); }
+        { auto q = base; q.character = 0.0f; q.drive = 0.0f; q.bodyTone = 1.0f; q.width = 0.0f; q.click = 0.0f; run ("all off", q); }
+        return 0;
+    }
+    if (argc > 2 && juce::String (argv[1]) == "--retrigger")
+    {
+        // Diagnostic: where the extra peak of a roll comes from.
+        auto p = preset (argv[2]);
+        auto show = [] (const char* what, const KickParams& q)
+        {
+            std::printf ("%-22s single %6.2f  1/16 %6.2f  1/32 %6.2f  | full velocity 1/16 %6.2f  1/32 %6.2f dBFS\n", what,
+                         db (retriggerPeak (q, 1 << 30, 150.0)), db (retriggerPeak (q, 4800, 150.0)), db (retriggerPeak (q, 2400, 150.0)),
+                         db (retriggerPeak (q, 4800, 150.0, true)), db (retriggerPeak (q, 2400, 150.0, true)));
+        };
+        show ("as is", p);
+        for (double bpm : { 120.0, 140.0, 150.0, 170.0 })
+            std::printf ("  single hit at %.0f BPM: %.2f dBFS\n", bpm, db (retriggerPeak (p, 1 << 30, bpm)));
+        {
+            // Where the roll peak sits relative to its hit, and the single hit at the same offset.
+            auto q = p; q.outputDb -= 24.0f;
+            for (int step : { 4800, 2400 })
+            {
+                dsp::KickEngine e; e.prepare (48000.0, 512);
+                juce::AudioBuffer<float> out (2, 96256);
+                int hit = 0;
+                for (int pos = 0; pos < 96256; pos += 512)
+                {
+                    juce::MidiBuffer m;
+                    for (int t = pos; t < pos + 512; ++t)
+                        if (t % step == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (hit++ % 2) == 0 ? 1.0f : 0.8f), t - pos);
+                    e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 512, m, 0, q, 150.0, false);
+                }
+                int pi = 0; float pv = 0;
+                for (int c = 0; c < 2; ++c) for (int i = 0; i < 96000; ++i) if (std::abs (out.getSample (c, i)) > pv) { pv = std::abs (out.getSample (c, i)); pi = i; }
+                std::printf ("  step %d: peak %.2f dBFS at hit %d + %.2f ms\n", step, db (pv) + 24.0, pi / step, (pi % step) / 48.0);
+                // per-hit peaks
+                std::printf ("  per-hit peaks:");
+                for (int h = 0; h < 96000 / step && h < 24; ++h)
+                    std::printf (" %.1f", db (std::max (out.getMagnitude (0, h * step, step), out.getMagnitude (1, h * step, step))) + 24.0);
+                std::printf ("\n");
+            }
+        }
+        { auto q = p; q.rumble = 0.0f; show ("no rumble", q); }
+        { auto q = p; q.width = 0.0f; show ("width 0", q); }
+        { auto q = p; q.click = 0.0f; show ("no click", q); }
+        { auto q = p; q.drive = 0.0f; q.character = 0.0f; show ("no drive", q); }
+        {
+            // Identical hits (no click noise, no velocity): roll hit 3 minus an isolated hit.
+            auto q = p; q.click = 0.0f; q.velSens = 0.0f; q.outputDb -= 24.0f;
+            auto render = [&] (int step, int hits)
+            {
+                dsp::KickEngine e; e.prepare (48000.0, 512);
+                juce::AudioBuffer<float> out (2, 48128);
+                for (int pos = 0; pos < 48128; pos += 512)
+                {
+                    juce::MidiBuffer m;
+                    for (int t = pos; t < pos + 512; ++t)
+                        if (t % step == 0 && t / step < hits) m.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), t - pos);
+                    e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 512, m, 0, q, 150.0, false);
+                }
+                return out;
+            };
+            for (int step : { 4800, 2400 })
+            {
+                const auto roll = render (step, 4), single = render (step, 1);
+                const int start = 3 * step + 48; // hand-off: the hit starts 1 ms after its note
+                const float g = std::pow (10.0f, 24.0f / 20.0f);
+                std::printf ("  step %d, hit 3 vs isolated hit (dBFS-equivalent peaks per 2 ms):\n   roll  ", step);
+                for (int k = 0; k < 12; ++k) std::printf (" %6.1f", db (roll.getMagnitude (0, start + k * 96, 96) * g));
+                std::printf ("\n   single");
+                for (int k = 0; k < 12; ++k) std::printf (" %6.1f", db (single.getMagnitude (0, k * 96, 96) * g));
+                std::printf ("\n   diff  ");
+                for (int k = 0; k < 12; ++k)
+                {
+                    float d = 0.0f;
+                    for (int i = k * 96; i < (k + 1) * 96; ++i) d = std::max (d, std::abs (roll.getSample (0, start + i) - single.getSample (0, i)));
+                    std::printf (" %6.1f", db (d * g));
+                }
+                std::printf ("\n");
+            }
+        }
+        { auto q = p; q.bodyTone = 1.0f; show ("no body scoop", q); }
+        { auto q = p; q.bodyTone = 1.0f; q.character = 0.0f; show ("no scoop, no char", q); }
+        { auto q = p; q.bodyTone = 1.0f; q.click = 0.0f; show ("no scoop, no click", q); }
+        { auto q = p; q.bodyTone = 1.0f; q.click = 0.0f; q.velSens = 0.0f; show ("no scoop/click/vel", q); }
+        { auto q = p; q.bodyTone = 1.0f; q.click = 0.0f; q.velSens = 0.0f; q.character = 0.0f; show ("+ no character", q); }
+        { auto q = p; q.character = 0.0f; show ("no character", q); }
+        { auto q = p; q.punch = 0.0f; show ("no punch", q); }
+        { auto q = p; q.velSens = 0.0f; show ("no velocity", q); }
+        { auto q = p; q.pitchFall = 0.0f; show ("no pitch fall", q); }
+        return 0;
+    }
     if (argc > 1 && juce::String (argv[1]) == "--dump-presets")
     {
         // name|category|id=value ... for Tools/fit_kicks.py
@@ -855,7 +1094,9 @@ int main (int argc, char** argv)
         while (std::getline (std::cin, line))
         {
             Snapshot s;
-            double len = 0.6, sr = 48000.0;
+            double len = 0.6, sr = 48000.0, bpm = 140.0;
+            int step = 0; // _step: roll, a hit every _step samples (with _bpm)
+            float velocity = 1.0f; bool alternate = false; // _vel: hit velocity, _alt=1: 1.0 / _vel alternating
             std::istringstream ss (line);
             std::string tok;
             while (ss >> tok)
@@ -866,9 +1107,13 @@ int main (int argc, char** argv)
                 const float value = std::stof (tok.substr (eq + 1));
                 if (key == "_len") len = value;
                 else if (key == "_sr") sr = value;
+                else if (key == "_step") step = (int) value;
+                else if (key == "_bpm") bpm = value;
+                else if (key == "_vel") velocity = value;
+                else if (key == "_alt") alternate = value > 0.5f;
                 else s[key] = value;
             }
-            const auto audio = stream (paramsFromSnapshot (s), sr, 512, 1);
+            const auto audio = stream (paramsFromSnapshot (s), sr, 512, std::max (1, (int) std::ceil (len)), step, bpm, velocity, alternate);
             const int frames = std::min (audio.getNumSamples(), (int) (len * sr));
             out.resize ((size_t) frames * 2);
             for (int i = 0; i < frames; ++i)
@@ -907,6 +1152,7 @@ int main (int argc, char** argv)
     testCharacterAudible();
     testPitchFall();
     testPresetsStayInKickRegister();
+    testRetriggerPeaks();
     testDriveSweepIsSmooth();
     testStereoControlsAreAudible();
     testStereoSplit();
