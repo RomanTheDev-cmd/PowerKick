@@ -1,6 +1,8 @@
 // Headless checks of the PowerKick engine, presets and WAV export.
 // Run: powerkick_tests [--report]   (--report prints per-preset levels)
 
+#include <algorithm>
+#include <array>
 #include "DSP/KickEngine.h"
 #include "KickRenderer.h"
 #include "Presets.h"
@@ -422,6 +424,106 @@ void testPitchFall()
     expect (st[1] - st[0] >= 2.0, "pitchFall 12 adds a 2+ st fall from 100 to 250 ms (" + juce::String (st[1] - st[0], 2) + " st)");
 }
 
+// Median fundamental (Hz) in 30-60 / 60-120 / 120-200 ms after the onset: rising zero crossings of
+// the 15-500 Hz part (brick-wall FFT filter), as Tools/kick_features.py measures the references.
+std::array<double, 3> kickPitchWindows (const juce::AudioBuffer<float>& a, double sr)
+{
+    const int n = a.getNumSamples();
+    std::vector<float> mono ((size_t) n);
+    float peak = 0.0f;
+    for (int i = 0; i < n; ++i)
+    {
+        mono[(size_t) i] = 0.5f * (a.getSample (0, i) + a.getSample (a.getNumChannels() - 1, i));
+        peak = std::max (peak, std::abs (mono[(size_t) i]));
+    }
+    int on = 0;
+    while (on < n && std::abs (mono[(size_t) on]) <= 0.1f * peak) ++on;
+    on = std::max (0, on - (int) (0.001 * sr));
+    const int len = std::min (n - on, (int) (0.35 * sr));
+    constexpr int order = 15, size = 1 << order; // 0.35 s at 48 kHz fits
+    std::vector<float> buf (2 * size, 0.0f);
+    for (int i = 0; i < len; ++i) buf[(size_t) i] = mono[(size_t) (on + i)];
+    juce::dsp::FFT fft (order);
+    fft.performRealOnlyForwardTransform (buf.data());
+    for (int k = 0; k <= size / 2; ++k)
+    {
+        const double f = k * sr / size;
+        if (f > 500.0 || f < 15.0) { buf[(size_t) (2 * k)] = 0.0f; buf[(size_t) (2 * k + 1)] = 0.0f; }
+    }
+    fft.performRealOnlyInverseTransform (buf.data());
+    // Hysteresis: a rising crossing counts only after the signal really went negative (a quarter of
+    // its current amplitude), so a clipped wave lingering around zero cannot add half-periods.
+    const float follow = (float) std::exp (-1.0 / (0.02 * sr));
+    float env = 0.0f, lowPeak = 0.0f;
+    for (int i = 0; i < len; ++i) lowPeak = std::max (lowPeak, std::abs (buf[(size_t) i]));
+    const float audible = 0.03f * lowPeak; // a period below -30 dB of the hit carries no audible pitch
+    float periodMax = 0.0f;
+    bool armed = false;
+    std::vector<double> mids, freqs; // instantaneous frequency at each period's midpoint
+    double prev = -1.0;
+    for (int i = 0; i + 1 < len; ++i)
+    {
+        env = std::max (std::abs (buf[(size_t) i]), env * follow);
+        periodMax = std::max (periodMax, std::abs (buf[(size_t) i]));
+        if (buf[(size_t) i] < -0.25f * env) armed = true;
+        if (armed && buf[(size_t) i] < 0.0f && buf[(size_t) i + 1] >= 0.0f)
+        {
+            armed = false;
+            const double t = (i + buf[(size_t) i] / (buf[(size_t) i] - buf[(size_t) i + 1] + 1.0e-20f)) / sr;
+            if (prev >= 0.0 && periodMax > audible && 1.0 / (t - prev) > 20.0 && 1.0 / (t - prev) < 1500.0)
+            {
+                mids.push_back (0.5 * (t + prev));
+                freqs.push_back (1.0 / (t - prev));
+            }
+            prev = t;
+            periodMax = 0.0f;
+        }
+    }
+    // Sampled on a 4 ms grid (interpolated, undefined outside the measured span), median per window.
+    const double edges[4] = { 0.03, 0.06, 0.12, 0.20 };
+    std::array<double, 3> out {};
+    for (int w = 0; w < 3; ++w)
+    {
+        std::vector<double> f;
+        for (int k = 1; k < 50; ++k)
+        {
+            const double g = 0.004 * k;
+            if (g < edges[w] || g >= edges[w + 1] || mids.size() < 2 || g < mids.front() || g > mids.back()) continue;
+            const auto hi = (size_t) (std::upper_bound (mids.begin(), mids.end(), g) - mids.begin());
+            const size_t i1 = std::min (hi, mids.size() - 1), i0 = i1 - 1;
+            const double u = (g - mids[i0]) / std::max (1.0e-12, mids[i1] - mids[i0]);
+            f.push_back (freqs[i0] + u * (freqs[i1] - freqs[i0]));
+        }
+        if (f.empty()) continue;
+        std::sort (f.begin(), f.end());
+        out[(size_t) w] = f.size() % 2 ? f[f.size() / 2] : 0.5 * (f[f.size() / 2 - 1] + f[f.size() / 2]);
+    }
+    return out;
+}
+
+void testPresetsStayInKickRegister()
+{
+    // A kick that stays high or glides down slowly from far above reads as a pitched lead.
+    // Limits: the reference kicks' p90-p97 (Tools/pitch_guard.py fits to 170/100/80 Hz) + margin.
+    const double cap[3] = { 180.0, 105.0, 85.0 };
+    const char* window[3] = { "30-60 ms", "60-120 ms", "120-200 ms" };
+    int bad = 0;
+    for (const auto& pr : factoryPresets())
+    {
+        auto a = stream (paramsFromSnapshot (pr.values), 48000.0, 512, 1); // as Tools/fit_kicks.py renders
+        a.setSize (2, (int) (0.6 * 48000.0), true);
+        const auto f = kickPitchWindows (a, 48000.0);
+        for (int w = 0; w < 3; ++w)
+            if (f[(size_t) w] > cap[w])
+            {
+                ++bad;
+                expect (false, pr.name + ": " + window[w] + " pitch " + juce::String (f[(size_t) w], 0) + " Hz is above the kick register ("
+                               + juce::String (cap[w], 0) + " Hz)");
+            }
+    }
+    expect (bad == 0, "every factory preset stays in the kick register");
+}
+
 void testDriveSweepIsSmooth()
 {
     // Same class of bug Codex found in PowerBass: a few-point peak estimate of a non-monotonic
@@ -802,6 +904,7 @@ int main (int argc, char** argv)
     testNoClicksOnParameterJumps();
     testCharacterAudible();
     testPitchFall();
+    testPresetsStayInKickRegister();
     testDriveSweepIsSmooth();
     testStereoControlsAreAudible();
     testStereoSplit();
