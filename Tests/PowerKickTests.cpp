@@ -346,6 +346,65 @@ void testCancelledHandoffStaysSmooth()
     }
 }
 
+// Controller traffic with no mapped effect must not change the sound; an active mod wheel must
+// affect the current block after its event, rather than waiting for the next host block.
+void testMidiControllerChunking()
+{
+    auto p = preset ("Hard Techno Core");
+    p.outputDb -= 24.0f; p.drive = 0.15f; p.modDrive = 0;
+    auto run = [&p] (int controller, bool dense)
+    {
+        dsp::KickEngine e; e.prepare (48000, 512);
+        juce::AudioBuffer<float> out (2, 512);
+        juce::MidiBuffer midi;
+        midi.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 0);
+        if (controller >= 0)
+            for (int at = 73; at < 512; at += dense ? 4 : 512)
+                midi.addEvent (juce::MidiMessage::controllerEvent (1, controller, 127), at);
+        e.process (out.getWritePointer (0), out.getWritePointer (1), 512, midi, 0, p, 140, false);
+        return out;
+    };
+    auto difference = [] (const auto& a, const auto& b, int from, int to)
+    {
+        double error = 0;
+        for (int c = 0; c < 2; ++c)
+            for (int i = from; i < to; ++i)
+                error = std::max (error, std::abs ((double) a.getSample (c, i) - b.getSample (c, i)));
+        return error;
+    };
+    for (int controller : { 1, 7, 74 })
+        expect (difference (run (-1, false), run (controller, true), 0, 512) < 1.0e-6,
+                "unmapped dense CC" + juce::String (controller) + " preserves audio");
+    p.modDrive = 1;
+    const auto control = run (-1, false), changed = run (1, false);
+    expect (difference (control, changed, 0, 73) < 1.0e-6, "mod wheel cannot affect audio before its MIDI event");
+    const double effect = difference (control, changed, 128, 512);
+    expect (effect > 1.0e-5, "mod wheel changes drive in the same host block (difference " + juce::String (effect, 8) + ")");
+}
+
+// The rendered hit (WAV export, drag and drop) drops exactly the oversampling latency of the chosen
+// OVERSAMPLING: it starts on the attack, not cut into it, in every mode.
+void testRenderedKickStartsOnTheAttack()
+{
+    auto p = preset ("Hard Techno Core");
+    p.click = 0.0f; // a smooth start: the first sample of the body is (close to) zero
+    juce::AudioBuffer<float> hits[3];
+    for (int os = 0; os < 3; ++os)
+    {
+        p.oversampleIndex = os;
+        hits[os] = renderKick (p, 48000.0, 140.0, true);
+        expect (std::abs (hits[os].getSample (0, 0)) < 0.01f, "rendered hit at " + juce::String (2 << os)
+                + "x starts on the attack (first sample " + juce::String (hits[os].getSample (0, 0), 4) + ")");
+    }
+    for (int os : { 0, 2 })
+    {
+        double diff = 0.0;
+        for (int i = 0; i < 96; ++i)
+            diff = std::max (diff, (double) std::abs (hits[os].getSample (0, i) - hits[1].getSample (0, i)));
+        expect (diff < 0.05, "rendered hit at " + juce::String (2 << os) + "x lines up with 4x (difference " + juce::String (diff, 4) + ")");
+    }
+}
+
 void testWidthZeroIsTrueMono()
 {
     auto p = preset ("Steel Press");
@@ -921,7 +980,8 @@ void testAdvancedFeatures()
         return -1; };
       const int ended = onset (24000), sounding = onset (2432); // block-aligned positions
       expect (ended >= 0 && ended <= 8, "a hit after the previous one ended starts on time (" + juce::String (ended) + " samples + latency)");
-      expect (sounding >= 0 && sounding <= ended + 49, "a hit on a sounding one starts within 1 ms (" + juce::String (sounding) + " samples)"); }
+      // The new hit itself starts 1 ms later, exactly like an isolated hit: testWholeChainHandoff.
+      expect (sounding >= 0 && sounding <= 1, "a hit on a sounding one starts fading the old sound at once (" + juce::String (sounding) + " samples)"); }
 
     // Reverb rumble: smoother tail than the comb rumble, sub still mono.
     { auto ripple = [] (const juce::AudioBuffer<float>& x)
@@ -1259,6 +1319,8 @@ int main (int argc, char** argv)
     testPresetsStayInKickRegister();
     testRetriggerPeaks();
     testWholeChainHandoff();
+    testRenderedKickStartsOnTheAttack();
+    testMidiControllerChunking();
     testCancelledHandoffStaysSmooth();
     testDriveSweepIsSmooth();
     testStereoControlsAreAudible();

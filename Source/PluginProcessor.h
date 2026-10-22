@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DSP/KickEngine.h"
 #include "Presets.h"
@@ -69,6 +71,9 @@ private:
     pk::dsp::KickEngine engine;
     std::atomic<double> hostBpm { 140.0 };
     double currentSampleRate = 0.0;
+    // Latency of each oversampling choice at the prepared rate, for a project restored after prepare.
+    std::array<int, 3> latencyByOversampling { -1, -1, -1 };
+    juce::AudioBuffer<float> monoScratch; // right channel for a mono bus, allocated in prepareToPlay
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PowerKickProcessor)
 };

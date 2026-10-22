@@ -8,7 +8,7 @@ juce::AudioBuffer<float> renderKick (const KickParams& params, double sampleRate
 {
     constexpr int block = 512;
     dsp::KickEngine engine;
-    engine.prepare (sampleRate, block);
+    engine.prepare (sampleRate, block, params.oversampleIndex); // the latency dropped below is that choice's
     const int latency = engine.getLatencySamples();
 
     const int maxLen = (int) (sampleRate * 4.0);

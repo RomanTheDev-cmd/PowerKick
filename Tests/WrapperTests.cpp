@@ -2,7 +2,21 @@
 // The DSP itself is covered by PowerKickTests.cpp.
 
 #include "PluginProcessor.h"
+#include <atomic>
 #include <iostream>
+#include <new>
+
+// Counts heap allocations while 'trackAllocs' is set (real-time safety of processBlock).
+static std::atomic<bool> trackAllocs { false };
+static std::atomic<int> allocCount { 0 };
+void* operator new (std::size_t n)
+{
+    if (trackAllocs.load (std::memory_order_relaxed)) allocCount.fetch_add (1);
+    if (void* p = std::malloc (n == 0 ? 1 : n)) return p;
+    throw std::bad_alloc();
+}
+void operator delete (void* p) noexcept { std::free (p); }
+void operator delete (void* p, std::size_t) noexcept { std::free (p); }
 
 namespace
 {
@@ -175,6 +189,95 @@ void testOversamplingLatencyTracksProcessing()
     }
 }
 
+void testLatencyOfStateRestoredAfterPrepare()
+{
+    // Some hosts restore the project after prepareToPlay: the restored choice's latency must be
+    // reported before the first audio block.
+    PowerKickProcessor source;
+    setPlain (source, pk::id::oversample, 0.0f); // 2x: 4 samples at 48 kHz, the default 4x has 6
+    juce::MemoryBlock saved;
+    source.getStateInformation (saved);
+    PowerKickProcessor late, early;
+    late.prepareToPlay (48000, 512);
+    const int before = late.getLatencySamples();
+    late.setStateInformation (saved.getData(), (int) saved.getSize());
+    early.setStateInformation (saved.getData(), (int) saved.getSize());
+    early.prepareToPlay (48000, 512);
+    expect (before != early.getLatencySamples(), "the restored oversampling has another latency (else the next check is empty)");
+    expect (late.getLatencySamples() == early.getLatencySamples(), "state restored after prepare reports its latency before the first block ("
+            + juce::String (late.getLatencySamples()) + " vs " + juce::String (early.getLatencySamples()) + ")");
+}
+
+// Re-preparing at another rate must sound like a fresh instance (no state carried over).
+void testReprepareMatchesFresh()
+{
+    for (double startRate : { 44100.0, 96000.0 })
+    {
+        const double finalRate = startRate == 96000.0 ? 44100.0 : 96000.0;
+        PowerKickProcessor reused, fresh;
+        reused.prepareToPlay (startRate, 512);
+        play (reused, 30, 4800);
+        reused.prepareToPlay (finalRate, 512);
+        fresh.prepareToPlay (finalRate, 512);
+        double error = 0.0;
+        for (int b = 0; b < 40; ++b)
+        {
+            juce::AudioBuffer<float> a (2, 512), c (2, 512);
+            a.clear(); c.clear();
+            juce::MidiBuffer ma, mc;
+            if (b == 0) { ma.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 37); mc = ma; }
+            reused.processBlock (a, ma);
+            fresh.processBlock (c, mc);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 512; ++i)
+                    error = std::max (error, (double) std::abs (a.getSample (ch, i) - c.getSample (ch, i)));
+        }
+        expect (error < 1.0e-6, "reprepare " + juce::String (startRate) + " -> " + juce::String (finalRate)
+                + " matches a fresh instance (error " + juce::String (error, 9) + ")");
+    }
+}
+
+// Every factory preset loads in the plug-in exactly as the tests and tools render it
+// (paramsFromSnapshot): a missing key must not fall back to different values in the two paths.
+void testFactoryPresetsLoadAsMeasured()
+{
+    PowerKickProcessor p;
+    const auto& factory = pk::factoryPresets();
+    int bad = 0;
+    juce::String first;
+    for (int i = 0; i < (int) factory.size(); ++i)
+    {
+        p.loadPreset (i);
+        const auto got = pk::paramsFromSnapshot (pk::captureSnapshot (p.state));
+        const auto want = pk::paramsFromSnapshot (factory[(size_t) i].values);
+        juce::String diff;
+        auto near = [&diff] (const char* what, double a, double b)
+        {
+            if (std::abs (a - b) > 0.051 + 0.01 * std::abs (b))
+                diff << what << " " << juce::String (a, 3) << " vs " << juce::String (b, 3) << "; ";
+        };
+        near ("tune", got.tune, want.tune); near ("decay", got.decay, want.decay); near ("punch", got.punch, want.punch);
+        near ("body", got.body, want.body); near ("click", got.click, want.click); near ("drive", got.drive, want.drive);
+        near ("character", got.character, want.character); near ("rumble", got.rumble, want.rumble);
+        near ("output", got.outputDb, want.outputDb); near ("width", got.width, want.width); near ("delay", got.delayMs, want.delayMs);
+        near ("driveMode", (int) got.driveMode, (int) want.driveMode); near ("charMode", (int) got.charMode, (int) want.charMode);
+        near ("pitchDepth", got.pitchDepth, want.pitchDepth); near ("pitchTime", got.pitchTime, want.pitchTime);
+        near ("clickType", (int) got.clickType, (int) want.clickType); near ("clickTone", got.clickTone, want.clickTone);
+        near ("rumbleTime", got.rumbleTime, want.rumbleTime); near ("rumbleSync", got.rumbleSync, want.rumbleSync);
+        near ("velSens", got.velSens, want.velSens); near ("keyTrack", got.keyTrack, want.keyTrack);
+        near ("pitchFall", got.pitchFall, want.pitchFall); near ("bodyTone", got.bodyTone, want.bodyTone);
+        near ("split", got.splitHz, want.splitHz); near ("beatLength", got.beatLength, want.beatLength);
+        near ("subLevel", got.subLevel, want.subLevel); near ("startPhase", got.startPhase, want.startPhase);
+        near ("driveEnv", got.driveEnv, want.driveEnv); near ("velDrive", got.velDrive, want.velDrive);
+        near ("oversample", got.oversampleIndex, want.oversampleIndex); near ("pitchCurve", got.pitchCurve, want.pitchCurve);
+        near ("keyRoot", got.keyRoot, want.keyRoot); near ("modDrive", got.modDrive, want.modDrive);
+        near ("choke", got.choke, want.choke); near ("rumbleMode", got.rumbleMode, want.rumbleMode);
+        if (diff.isNotEmpty() && bad++ < 3)
+            first << factory[(size_t) i].name << ": " << diff;
+    }
+    expect (bad == 0, "factory presets load in the plug-in as measured (" + juce::String (bad) + " differ; " + first + ")");
+}
+
 void testAutomation()
 {
     PowerKickProcessor p;
@@ -205,6 +308,15 @@ void testMonoBus()
     p.prepareToPlay (48000, 512);
     const auto r = play (p, 20, 4800, {}, 1);
     expect (r.finite && r.peak > 0.1 && r.peak <= 1.0, "mono bus produces the kick (" + juce::String (r.peak, 3) + ")");
+    juce::AudioBuffer<float> buf (1, 512);
+    juce::MidiBuffer midi;
+    midi.ensureSize (256);
+    midi.addEvent (juce::MidiMessage::noteOn (1, 60, 1.0f), 10);
+    allocCount = 0;
+    trackAllocs = true;
+    p.processBlock (buf, midi);
+    trackAllocs = false;
+    expect (allocCount.load() == 0, "mono bus processBlock does not allocate (" + juce::String (allocCount.load()) + " allocations)");
 }
 
 void testABAndVariation()
@@ -297,6 +409,9 @@ int main (int argc, char** argv)
     testLegacyProjectMigration();
     testPresetSwitchingWhilePlaying();
     testOversamplingLatencyTracksProcessing();
+    testLatencyOfStateRestoredAfterPrepare();
+    testReprepareMatchesFresh();
+    testFactoryPresetsLoadAsMeasured();
     testAutomation();
     testMonoBus();
     testABAndVariation();
