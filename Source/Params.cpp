@@ -46,7 +46,9 @@ const juce::StringArray& allParamIds()
                                          id::character, id::rumble, id::output, id::width, id::delay,
                                          id::driveMode, id::charMode, id::pitchDepth, id::pitchTime,
                                          id::clickType, id::clickTone, id::rumbleTime, id::rumbleSync,
-                                         id::velSens, id::keyTrack, id::bodyTone, id::pitchFall, id::splitFreq };
+                                         id::velSens, id::keyTrack, id::bodyTone, id::pitchFall, id::splitFreq,
+                                         id::beatLength, id::subLevel, id::startPhase, id::driveEnv, id::velDrive,
+                                         id::oversample, id::pitchCurve, id::keyRoot, id::modDrive, id::choke, id::rumbleMode };
     return ids;
 }
 
@@ -93,7 +95,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                        juce::NormalisableRange<float> (4.0f, 150.0f, 0.1f, 0.5f), 54.7f,
                                        Attr().withLabel ("ms")));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::clickType, 1 }, "Click Type",
-                                       juce::StringArray { "Soft", "Sharp", "Metal" }, 2));
+                                       juce::StringArray { "Soft", "Sharp", "Metal", "909 Noise", "FM Blip" }, 2));
     layout.add (unit (id::clickTone, "Click Tone", 1.0f));
     layout.add (unit (id::rumbleTime, "Rumble Time", 0.5f));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::rumbleSync, 1 }, "Rumble Sync",
@@ -110,6 +112,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     }
     layout.add (std::make_unique<APF> (juce::ParameterID { id::pitchFall, 1 }, "Pitch Fall",
                                        juce::NormalisableRange<float> (0.0f, 24.0f, 0.01f), 1.4f, Attr().withLabel ("st")));
+    // ADVANCED (neutral defaults)
+    layout.add (std::make_unique<APC> (juce::ParameterID { id::beatLength, 1 }, "Beat Length", juce::StringArray { "Off", "1/4", "1/8", "1/16" }, 0));
+    layout.add (unit (id::subLevel, "Sub Layer", 0.0f));
+    layout.add (unit (id::startPhase, "Start Phase", 0.0f));
+    layout.add (unit (id::driveEnv, "Drive Attack", 0.0f));
+    layout.add (unit (id::velDrive, "Velocity Drive", 0.0f));
+    layout.add (std::make_unique<APC> (juce::ParameterID { id::oversample, 1 }, "Oversampling", juce::StringArray { "2x", "4x", "8x" }, 1));
+    layout.add (unit (id::pitchCurve, "Pitch Curve", 0.0f));
+    layout.add (std::make_unique<APF> (juce::ParameterID { id::keyRoot, 1 }, "Key Root", juce::NormalisableRange<float> (24.0f, 84.0f, 1.0f), 60.0f,
+                                       Attr().withStringFromValueFunction ([] (float v, int) { return juce::MidiMessage::getMidiNoteName (juce::roundToInt (v), true, true, 3); })));
+    layout.add (unit (id::modDrive, "Mod Wheel Drive", 0.0f));
+    layout.add (std::make_unique<APB> (juce::ParameterID { id::choke, 1 }, "Choke", false));
+    layout.add (std::make_unique<APC> (juce::ParameterID { id::rumbleMode, 1 }, "Rumble Mode", juce::StringArray { "Classic", "Reverb" }, 0));
     return layout;
 }
 
@@ -141,6 +156,17 @@ KickParams readParams (const juce::AudioProcessorValueTreeState& s)
     p.bodyTone = v (id::bodyTone);
     p.pitchFall = v (id::pitchFall);
     p.splitHz = v (id::splitFreq);
+    p.beatLength = juce::roundToInt (v (id::beatLength));
+    p.subLevel = v (id::subLevel);
+    p.startPhase = v (id::startPhase);
+    p.driveEnv = v (id::driveEnv);
+    p.velDrive = v (id::velDrive);
+    p.oversampleIndex = juce::roundToInt (v (id::oversample));
+    p.pitchCurve = v (id::pitchCurve);
+    p.keyRoot = juce::roundToInt (v (id::keyRoot));
+    p.modDrive = v (id::modDrive);
+    p.choke = v (id::choke) > 0.5f;
+    p.rumbleMode = juce::roundToInt (v (id::rumbleMode));
     return p;
 }
 }

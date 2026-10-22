@@ -17,9 +17,9 @@ class KickVoice
 public:
     void prepare (double sampleRate) { sr = sampleRate; active = false; }
 
-    void start (const KickParams& p, int note, float velocity, unsigned int seed)
+    void start (const KickParams& p, int note, float velocity, unsigned int seed, double bpm = 140.0)
     {
-        const double keyOffset = p.keyTrack ? (note - 60) : 0.0;
+        const double keyOffset = p.keyTrack ? (note - p.keyRoot) : 0.0;
         f0 = baseFrequency (p.tune) * std::pow (2.0, keyOffset / 12.0);
         depth = p.pitchDepth * (0.55 + 0.45 * p.punch);
         pitchTau = std::max (0.002, p.pitchTime * 0.001);
@@ -28,7 +28,17 @@ public:
         punch = p.punch;
         body = p.body;
         decaySec = decayMs (p.decay) * 0.001;
+        if (p.beatLength > 0) // BEAT LENGTH: end within a note value at the host tempo
+        {
+            static constexpr double beats[4] = { 0.0, 1.0, 0.5, 0.25 };
+            const double maxSec = beats[juce::jlimit (0, 3, p.beatLength)] * 60.0 / juce::jlimit (40.0, 300.0, bpm) - 0.01;
+            decaySec = std::max (0.03, std::min (decaySec, maxSec));
+            fallTau = juce::jlimit (0.03, 0.2, 0.25 * decaySec);
+        }
         hold = decaySec * (0.06 + 0.54 * body);
+        curveShape = p.pitchCurve;
+        subLevel = p.subLevel;
+        chokeFast = p.choke;
         // High BODY holds the level and then stops, like measured hard-techno kicks
         // (tail only 1-2 dB under the hit); low BODY decays smoothly.
         curve = 0.35 + 3.65 * std::pow (1.0 - body, 1.4);
@@ -52,34 +62,41 @@ public:
         static constexpr double ratios[6] = { 1.0, 1.4717, 1.7932, 2.5310, 2.6142, 3.9071 };
         for (int i = 0; i < 6; ++i) { metalInc[i] = metalBase * ratios[i] / sr; metalPhase[i] = 0.0; }
 
+        if (clickType == ClickType::noise909) clickFilter.set (3500.0 + 3000.0 * clickTone, 0.8, sr);
+        if (clickType == ClickType::noise909) clickTau = 0.006;
+        if (clickType == ClickType::fmBlip) { clickTau = 0.004; blipFreq = 1800.0 + 1800.0 * clickTone; }
+
         rng.seed (seed);
         t = 0.0;
-        phase = 0.0;
+        phase = 0.25 * juce::jlimit (0.0f, 1.0f, p.startPhase); // START PHASE: 0..90 degrees
         fade = 1.0;
         fadeStep = 0.0;
         active = true;
     }
 
     // Short fade so a retrigger never cuts a waveform mid-cycle.
-    void release() noexcept
+    void release (bool choke = false) noexcept
     {
         if (active && fadeStep == 0.0)
-            fadeStep = 1.0 / (0.004 * sr);
+            fadeStep = 1.0 / ((choke ? 0.001 : 0.004) * sr); // CHOKE: 1 ms
     }
 
     bool isActive() const noexcept { return active; }
 
     // Returns body and click separately; env receives the amplitude envelope
     // (used to duck the rumble under each hit).
-    void tick (double& bodyOut, double& clickOut, double& env) noexcept
+    void tick (double& bodyOut, double& clickOut, double& env, double& subOut) noexcept
     {
-        bodyOut = clickOut = env = 0.0;
+        bodyOut = clickOut = env = subOut = 0.0;
         if (! active)
             return;
 
         // Fast sweep, the punch blip, and a slow fall through the tail (time constant 25% of
-        // DECAY, 30..200 ms), all ending on TUNE.
-        const double sweep = depth * std::exp (-t / pitchTau) + punch * 14.0 * std::exp (-t / 0.004)
+        // DECAY, 30..200 ms), all ending on TUNE. PITCH CURVE blends the exponential sweep
+        // towards a rounder, slower 1 / (1 + x^2) shape.
+        const double x = t / pitchTau;
+        const double shape = curveShape > 0.0 ? (1.0 - curveShape) * std::exp (-x) + curveShape / (1.0 + x * x) : std::exp (-x);
+        const double sweep = depth * shape + punch * 14.0 * std::exp (-t / 0.004)
                              + fall * std::exp (-t / fallTau);
         const double freq = std::min (f0 * std::exp2 (sweep / 12.0), sr * 0.45);
         phase += freq / sr;
@@ -99,6 +116,9 @@ public:
         a *= attack * fade;
         env = a;
         bodyOut = s * a * transient * velGain * (0.92 / (1.0 + 0.45 * punch));
+        // SUB LAYER: the same pitch as a clean, unsaturated sine; mixed after the drive.
+        if (subLevel > 0.0)
+            subOut = std::sin (2.0 * pi * phase) * a * velGain * 0.8 * subLevel;
 
         clickOut = renderClick() * fade * clickGain;
 
@@ -138,12 +158,21 @@ private:
                 const double ring = osc[0] * osc[1] + osc[2] * osc[3] + osc[4] * osc[5];
                 return (clickFilter.tick (ring).band * 1.6 + rng.white() * 0.08) * e;
             }
+            case ClickType::noise909: // bright band-passed noise burst, 909-style
+                return clickFilter.tick (rng.white()).band * 2.6 * e;
+            case ClickType::fmBlip:   // short FM "tick": carrier with a fast-decaying 3.5x modulator
+            {
+                const double index = 4.0 * std::exp (-t / 0.002);
+                return std::sin (2.0 * pi * blipFreq * t + index * std::sin (2.0 * pi * 3.5 * blipFreq * t)) * 2.4 * e;
+            }
         }
         return 0.0;
     }
 
     double sr = 48000.0, t = 0.0, phase = 0.0;
     double f0 = 43.65, depth = 30.0, pitchTau = 0.03, fall = 0.0, fallTau = 0.1, punch = 0.5, body = 0.5;
+    double curveShape = 0.0, subLevel = 0.0;
+    bool chokeFast = false;
     double decaySec = 0.4, hold = 0.05, curve = 2.0, satGain = 2.0, satNorm = 1.0, velGain = 1.0;
     ClickType clickType = ClickType::sharp;
     double clickTone = 0.5, clickGain = 0.0, clickTau = 0.002, blipFreq = 1000.0;
@@ -172,6 +201,17 @@ public:
             damp[i] = 0.0;
         }
         dampCoef = std::exp (-2.0 * pi * 320.0 / sr);
+        // Reverb mode: longer mutually prime lines, darker damping, two diffusers.
+        static constexpr double revMs[4] = { 53.7, 61.3, 71.1, 79.9 };
+        for (int i = 0; i < 4; ++i)
+        {
+            revLen[i] = revMs[i] * 0.001 * sr;
+            rev[i].prepare ((int) revLen[i] + 8);
+            revDamp[i] = 0.0;
+        }
+        revDampCoef = std::exp (-2.0 * pi * 220.0 / sr);
+        static constexpr double difMs[2] = { 5.1, 1.7 };
+        for (int i = 0; i < 2; ++i) { difLen[i] = difMs[i] * 0.001 * sr; dif[i].prepare ((int) difLen[i] + 8); }
         lp.set (165.0, 0.85, sr);
         hp.highpass (32.0, 0.7, sr);
         duckAtt = std::exp (-1.0 / (0.0008 * sr));
@@ -184,6 +224,9 @@ public:
         pre.reset();
         for (auto& c : comb) c.reset();
         for (auto& d : damp) d = 0.0;
+        for (auto& c : rev) c.reset();
+        for (auto& d : revDamp) d = 0.0;
+        for (auto& d : dif) d.reset();
         lp.reset(); hp.reset();
         duck = 0.0; gateTime = 1.0e9; gateLen = 0.0;
     }
@@ -196,6 +239,7 @@ public:
         feedback = 0.55 + 0.38 * p.rumbleTime;
         gateLen = (0.5 + 1.5 * p.rumbleTime) * beat;
         amount = 1.5 * std::pow ((double) p.rumble, 1.3);
+        reverbMode = p.rumbleMode == 1;
     }
 
     void trigger() noexcept { gateTime = 0.0; }
@@ -207,12 +251,34 @@ public:
         const double x = pre.read (preDelay);
 
         double sum = 0.0;
-        for (int i = 0; i < 4; ++i)
+        if (! reverbMode)
+            for (int i = 0; i < 4; ++i)
+            {
+                const double y = comb[i].read (combLen[i] - 1.0);
+                damp[i] = y + dampCoef * (damp[i] - y);
+                comb[i].push (x + damp[i] * feedback);
+                sum += y;
+            }
+        else
         {
-            const double y = comb[i].read (combLen[i] - 1.0);
-            damp[i] = y + dampCoef * (damp[i] - y);
-            comb[i].push (x + damp[i] * feedback);
-            sum += y;
+            // Diffuse the input first so the tail has no audible comb periodicity.
+            double d = x;
+            for (int k = 0; k < 2; ++k)
+            {
+                const double delayed = dif[k].read (difLen[k] - 1.0);
+                const double v = d + 0.6 * delayed;
+                dif[k].push (v);
+                d = delayed - 0.6 * v;
+            }
+            const double fb = std::min (0.93, feedback + 0.08);
+            for (int i = 0; i < 4; ++i)
+            {
+                const double y = rev[i].read (revLen[i] - 1.0);
+                revDamp[i] = y + revDampCoef * (revDamp[i] - y);
+                rev[i].push (d + revDamp[i] * fb * (i % 2 == 0 ? 1.0 : -1.0));
+                sum += y;
+            }
+            sum *= 0.8;
         }
         double r = lp.tick (sum * 0.3).low;
         r = std::tanh (2.5 * r);
@@ -236,6 +302,9 @@ private:
     double sr = 48000.0, preDelay = 1000.0, feedback = 0.7, gateLen = 0.3, amount = 0.0;
     double combLen[4] {}, damp[4] {}, dampCoef = 0.9, duck = 0.0, duckAtt = 0.9, duckRel = 0.99, gateTime = 1.0e9;
     DelayLine pre, comb[4];
+    bool reverbMode = false;
+    double revLen[4] {}, revDamp[4] {}, revDampCoef = 0.97, difLen[2] {};
+    DelayLine rev[4], dif[2];
     Svf lp;
     Biquad hp;
 };
@@ -440,14 +509,19 @@ public:
         stereo.prepare (sr);
         subXoClean.set (90.0, sr);
         subXoDriven.set (90.0, sr);
+        subXoSub.set (90.0, sr);
         dc.set (12.0, sr);
         mono.setSize (1, blockSize);
         clean.assign ((size_t) blockSize, 0.0);
         noteTime.assign ((size_t) blockSize, 1.0e9);
         bodyToneCoef = std::exp (-1.0 / (0.02 * sr));
-        oversampler = std::make_unique<juce::dsp::Oversampling<float>> (
-            1, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
-        oversampler->initProcessing ((size_t) blockSize);
+        for (int i = 0; i < 3; ++i) // 2x / 4x / 8x
+        {
+            oversamplers[i] = std::make_unique<juce::dsp::Oversampling<float>> (
+                1, (size_t) (i + 1), juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
+            oversamplers[i]->initProcessing ((size_t) blockSize);
+        }
+        subBuf.assign ((size_t) blockSize, 0.0);
         reset();
     }
 
@@ -458,6 +532,7 @@ public:
         stereo.reset();
         subXoClean.reset();
         subXoDriven.reset();
+        subXoSub.reset();
         dc.reset();
         scoop.reset();
         scoopDb = 0.0;
@@ -465,19 +540,22 @@ public:
         bodyScoopDb = 0.0;
         sinceNote = 1.0e9;
         scoopCountdown = 0;
-        if (oversampler) oversampler->reset();
+        for (auto& o : oversamplers) if (o) o->reset();
+        subDelay.reset();
+        modWheel = 0.0; lastVel = 1.0;
         firstBlock = true;
     }
 
     int getLatencySamples() const { return osLatency(); }
 
-    void noteOn (const KickParams& p, int note, float velocity)
+    void noteOn (const KickParams& p, int note, float velocity, double bpm = 140.0)
     {
         sinceNote = 0.0;
-        for (auto& v : voices) v.release();
+        lastVel = juce::jlimit (0.0, 1.0, (double) velocity);
+        for (auto& v : voices) v.release (p.choke);
         // Prefer a free slot; otherwise steal the older (already fading) one.
         auto& v = ! voices[next].isActive() ? voices[next] : voices[1 - next];
-        v.start (p, note, velocity, seedCounter += 0x6F4F2A1Bu);
+        v.start (p, note, velocity, seedCounter += 0x6F4F2A1Bu, bpm);
         next = 1 - next;
         rumble.trigger();
     }
@@ -505,8 +583,15 @@ private:
         eq.setTarget (p.charMode, p.character);
         stereo.setTargets (p.width * 0.01, p.delayMs, p.splitHz, firstBlock);
 
+        // Oversampling choice (2x/4x/8x); switching resets the new stage.
+        const int osWanted = juce::jlimit (0, 2, p.oversampleIndex);
+        if (osWanted != activeOs) { activeOs = osWanted; oversamplers[activeOs]->reset(); }
+        auto& oversampler = oversamplers[activeOs];
+
         const auto& md = CharacterEq::mode (p.charMode);
-        const double driveDb = 30.0 * p.drive + md.extraDriveDb * p.character;
+        // VELOCITY DRIVE (softer notes cleaner) and MOD WHEEL DRIVE: both 0 by default.
+        const double driveDb = 30.0 * p.drive + md.extraDriveDb * p.character
+                               + 18.0 * p.velDrive * (lastVel - 1.0) + 24.0 * p.modDrive * modWheel;
         const double raw = p.charMode == CharMode::raw ? p.character : 0.0;
         const int ramp = std::max (1, (int) (0.02 * sr));
         if (firstBlock)
@@ -527,18 +612,21 @@ private:
             {
                 const auto msg = (*it).getMessage();
                 if (msg.isNoteOn())
-                    noteOn (p, msg.getNoteNumber(), msg.getFloatVelocity());
+                    noteOn (p, msg.getNoteNumber(), msg.getFloatVelocity(), bpm);
+                else if (msg.isController() && msg.getControllerNumber() == 1)
+                    modWheel = msg.getControllerValue() / 127.0;
                 else if (msg.isAllNotesOff() || msg.isAllSoundOff())
                     for (auto& v : voices) v.release();
                 ++it;
             }
-            double bodySum = 0.0, clickSum = 0.0, envSum = 0.0;
+            double bodySum = 0.0, clickSum = 0.0, envSum = 0.0, subSum = 0.0;
             for (auto& v : voices)
             {
-                double b, c, e;
-                v.tick (b, c, e);
-                bodySum += b; clickSum += c; envSum += e;
+                double b, c, e, sb;
+                v.tick (b, c, e, sb);
+                bodySum += b; clickSum += c; envSum += e; subSum += sb;
             }
+            subBuf[(size_t) i] = subSum;
             const double x = bodySum + clickSum + rumble.tick (bodySum, envSum);
             noteTime[(size_t) i] = sinceNote;
             sinceNote += 1.0 / sr;
@@ -554,8 +642,13 @@ private:
         const int factor = upLen / len;
         for (int i = 0; i < upLen; ++i)
         {
-            if (i % factor == 0) currentDrive = driveGain.next();
-            u[i] = (float) shape ((double) u[i], currentDrive, p.driveMode, raw);
+            if (i % factor == 0)
+            {
+                currentDrive = driveGain.next();
+                // DRIVE ATTACK: up to +24 dB more drive on the attack, decaying over ~30 ms.
+                attackDrive = p.driveEnv > 0.0f ? dbToGain (24.0 * p.driveEnv * std::exp (-noteTime[(size_t) (i / factor)] / 0.03)) : 1.0;
+            }
+            u[i] = (float) shape ((double) u[i], currentDrive * attackDrive, p.driveMode, raw);
         }
         oversampler->processSamplesDown (block);
         const double norm = shaperNorm (currentDrive, p.driveMode, raw) * dbToGain (-4.0 * p.drive);
@@ -597,6 +690,12 @@ private:
             subXoClean.split (cleanAligned, cLow, cHigh);
             const double protect = 0.75 * std::sqrt (p.drive);
             double y = dHigh + dLow + (cLow - dLow) * protect;
+            // SUB LAYER: clean sine under the driven body. It gets the same LR4 phase as the
+            // body's low band (allpass), so the two add instead of cancelling.
+            subDelay.push (subBuf[(size_t) i]);
+            double sLow, sHigh;
+            subXoSub.split (subDelay.read ((double) lat), sLow, sHigh);
+            y += sLow + sHigh;
 
             y = eq.tick (y);
             y = dc.tick (y) * outGain.next();
@@ -658,7 +757,11 @@ public:
     }
 
 private:
-    int osLatency() const { return oversampler ? (int) std::lround (oversampler->getLatencyInSamples()) : 0; }
+    int osLatency() const
+    {
+        const auto& o = oversamplers[activeOs];
+        return o ? (int) std::lround (o->getLatencyInSamples()) : 0;
+    }
 
     // Emergency ceiling only: presets keep their peaks below it, so it never shapes the sound.
     static double safety (double x) noexcept
@@ -676,7 +779,7 @@ private:
     Rumble rumble;
     CharacterEq eq;
     StereoEngine stereo;
-    LR4 subXoClean, subXoDriven;
+    LR4 subXoClean, subXoDriven, subXoSub;
     DcBlock dc;
     Biquad scoop;
     double scoopDb = 0.0;
@@ -689,7 +792,11 @@ private:
     DelayLine cleanDelay = makeDelay();
     juce::AudioBuffer<float> mono;
     std::vector<double> clean;
-    std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
+    std::unique_ptr<juce::dsp::Oversampling<float>> oversamplers[3];
+    int activeOs = 1;
+    std::vector<double> subBuf;
+    DelayLine subDelay = makeDelay();
+    double modWheel = 0.0, lastVel = 1.0, attackDrive = 1.0;
 
     static DelayLine makeDelay() { DelayLine d; d.prepare (256); return d; }
 };

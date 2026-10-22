@@ -353,7 +353,11 @@ const std::vector<Preset>& factoryPresets()
 
 const Snapshot& legacyNeutral()
 {
-    static const Snapshot neutral { { id::bodyTone, 1.0f }, { id::pitchFall, 0.0f }, { id::splitFreq, 1000.0f } };
+    static const Snapshot neutral { { id::bodyTone, 1.0f }, { id::pitchFall, 0.0f }, { id::splitFreq, 1000.0f },
+                                    { id::beatLength, 0.0f }, { id::subLevel, 0.0f }, { id::startPhase, 0.0f },
+                                    { id::driveEnv, 0.0f }, { id::velDrive, 0.0f }, { id::oversample, 1.0f },
+                                    { id::pitchCurve, 0.0f }, { id::keyRoot, 60.0f }, { id::modDrive, 0.0f },
+                                    { id::choke, 0.0f }, { id::rumbleMode, 0.0f } };
     return neutral;
 }
 
@@ -408,6 +412,17 @@ KickParams paramsFromSnapshot (const Snapshot& s)
     p.bodyTone = get (id::bodyTone, p.bodyTone);
     p.pitchFall = get (id::pitchFall, p.pitchFall);
     p.splitHz = get (id::splitFreq, p.splitHz);
+    p.beatLength = juce::roundToInt (get (id::beatLength, (float) p.beatLength));
+    p.subLevel = get (id::subLevel, p.subLevel);
+    p.startPhase = get (id::startPhase, p.startPhase);
+    p.driveEnv = get (id::driveEnv, p.driveEnv);
+    p.velDrive = get (id::velDrive, p.velDrive);
+    p.oversampleIndex = juce::roundToInt (get (id::oversample, (float) p.oversampleIndex));
+    p.pitchCurve = get (id::pitchCurve, p.pitchCurve);
+    p.keyRoot = juce::roundToInt (get (id::keyRoot, (float) p.keyRoot));
+    p.modDrive = get (id::modDrive, p.modDrive);
+    p.choke = get (id::choke, 0.0f) > 0.5f;
+    p.rumbleMode = juce::roundToInt (get (id::rumbleMode, (float) p.rumbleMode));
     return p;
 }
 
