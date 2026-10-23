@@ -4,10 +4,14 @@
 
 Форматы:
 
-- **macOS:** AU и VST3, универсальная сборка Apple Silicon + Intel, а также отдельное приложение Standalone.
+- **macOS:** AU и VST3, универсальная сборка Apple Silicon + Intel, а также отдельное приложение Standalone. macOS 10.13 и новее на Intel, macOS 11 и новее на Apple Silicon.
 - **Windows 10/11 x64:** VST3 и отдельное приложение. Собрано на Mac и проверено в Wine; в настоящей Windows не проверялось.
 
-## Установка (macOS)
+## Установка
+
+**Проще всего — установщики** из папки `Установщики`: `PowerKick-1.0.0-macOS.pkg` и `PowerKick-1.0.0-Windows-x64-Setup.exe`, по одному файлу на систему. Порядок — `Установщики/УСТАНОВКА.txt`.
+
+### macOS вручную
 
 Скопируйте файлы из папки `Сборки/macOS`:
 
@@ -17,7 +21,7 @@
 
 На этом Mac оба плагина уже установлены. В DAW плагин отображается от разработчика **MyDarknessDays** (Logic: Audio Units → MyDarknessDays → PowerKick).
 
-### Windows
+### Windows вручную
 
 Распакуйте `Сборки/PowerKick-1.0.0-Windows-x64.zip` и скопируйте папку `PowerKick.vst3` целиком в `C:\Program Files\Common Files\VST3\`. Подробности — в `УСТАНОВКА.txt` внутри архива.
 
@@ -120,7 +124,9 @@ build/powerkick_tests_artefacts/Release/powerkick_tests
 - `powerkick_tests --export <папка>` рендерит все 300 пресетов в WAV.
 - `powerkick_wrapper_tests --snapshot <папка>` сохраняет снимки окна (основной вид и ADVANCED) в PNG.
 
-**Установщики:** `bash Tools/make_installers.sh` собирает `Сборки/Установщики/PowerKick-<версия>-macOS.pkg` (AU, VST3, приложение) и `…-Windows-x64-Setup.exe` (NSIS: `brew install makensis`) из подписанных сборок в «Сборках»; инструкция — `Сборки/Установщики/УСТАНОВКА.txt`.
+**Установщики:** `bash Tools/make_installers.sh` собирает `Установщики/PowerKick-<версия>-macOS.pkg` (AU, VST3, приложение) и `…-Windows-x64-Setup.exe` (NSIS: `brew install makensis`) из подписанных сборок в «Сборках»; инструкция — `Установщики/УСТАНОВКА.txt`.
+
+**Проверка Windows-сборки без Windows:** `Tools/host_check` (в проекте PowerBass, годится для обоих плагинов) — маленький хост VST3: собирается тем же тулчейном, запускается под Wine, загружает `.vst3` как DAW и проверяет звук на 44,1/48/96 кГц, сохранение состояния, окно плагина (открытие, звук при открытом окне, закрытие). `cmake/patch_juce.cmake` перед сборкой исправляет в JUCE 8.0.12 зависание при закрытии окна плагина в Windows, когда `WaitForVBlank()` не работает (так под Wine).
 
 ## Референсы
 

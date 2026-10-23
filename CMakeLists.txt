@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
 
+# Must come before project(): set later, it was ignored and the builds required the build machine's
+# macOS (27.0), so they would not load on older Macs (found 2026-10-23). arm64 slices start at 11.0 anyway.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS")
+
 project(PowerKick VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -8,16 +12,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
   set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Universal binary" FORCE)
 endif()
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS")
 
 option(POWERKICK_COPY_AFTER_BUILD "Install plug-ins into the user plug-in folders after build" OFF)
 
+# cmake/patch_juce.cmake fixes JUCE before it is used (Windows: closing the editor could hang for ever).
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE/CMakeLists.txt")
+  set(JUCE_PATCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/JUCE")
+  include(cmake/patch_juce.cmake)
   add_subdirectory(third_party/JUCE)
 else()
   include(FetchContent)
   FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-                            GIT_TAG 29396c22c93392d6738e021b83196283d6e4d850)
+                            GIT_TAG 29396c22c93392d6738e021b83196283d6e4d850
+                            PATCH_COMMAND "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_juce.cmake")
   FetchContent_MakeAvailable(JUCE)
 endif()
 
