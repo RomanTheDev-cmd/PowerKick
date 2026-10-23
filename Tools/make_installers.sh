@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds the installers of this plug-in from the signed builds in Сборки/:
-#   Сборки/Установщики/<Name>-<ver>-macOS.pkg              AU, VST3 and the standalone app (each optional);
+#   Установщики/<Name>-<ver>-macOS.pkg                     AU, VST3 and the standalone app (each optional);
 #                                                          "all users" (/Library, /Applications) or "only me" (~)
-#   Сборки/Установщики/<Name>-<ver>-Windows-x64-Setup.exe  VST3 to Common Files\VST3, standalone to Program Files,
+#   Установщики/<Name>-<ver>-Windows-x64-Setup.exe         VST3 to Common Files\VST3, standalone to Program Files,
 #                                                          Start menu shortcut, uninstaller (NSIS: brew install makensis)
 # The .pkg is not signed with a Developer ID (none available): macOS asks to confirm opening it.
 #   bash Tools/make_installers.sh
@@ -13,7 +13,7 @@ NAME="$(basename "$PROJ")"
 LOWER="$(echo "$NAME" | tr 'A-Z' 'a-z')"
 VER="$(sed -n 's/^project([A-Za-z]* VERSION \([0-9.]*\).*/\1/p' "$PROJ/CMakeLists.txt")"
 ID="com.mydarknessdays.$LOWER"
-B="$PROJ/Сборки"; OUT="$B/Установщики"
+B="$PROJ/Сборки"; OUT="$PROJ/Установщики"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$OUT"
 
@@ -38,7 +38,7 @@ mkdir -p "$WORK/res"
 cat > "$WORK/res/welcome.html" <<EOF
 <html><body style="font-family:-apple-system,Helvetica;font-size:13px">
 <h2>$NAME $VER</h2>
-<p>MyDarknessDays $NAME for macOS 11 or later (Apple silicon and Intel).</p>
+<p>MyDarknessDays $NAME for macOS 10.13 or later on Intel, macOS 11 or later on Apple silicon.</p>
 <p>Choose <b>Customize</b> to pick the formats: Audio Unit (Logic Pro, GarageBand), VST3 (Ableton Live, Bitwig, Reaper...)
 and the standalone application. After installing, restart your DAW.</p>
 <p lang="ru">Выберите <b>Настроить</b>, чтобы отметить форматы: Audio Unit (Logic Pro, GarageBand), VST3 (Ableton Live,
@@ -53,7 +53,7 @@ cat > "$WORK/dist.xml" <<EOF
   <welcome file="welcome.html" mime-type="text/html"/>
   <domains enable_localSystem="true" enable_currentUserHome="true"/>
   <options customize="allow" require-scripts="false" hostArchitectures="arm64,x86_64"/>
-  <os-version min="11.0"/>
+  <os-version min="10.13"/>
   <choices-outline>
     <line choice="au"/>
     <line choice="vst3"/>
