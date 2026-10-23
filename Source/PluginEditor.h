@@ -175,7 +175,7 @@ public:
     void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
     void mouseExit (const juce::MouseEvent&) override { hover = false; repaint(); }
     void mouseDrag (const juce::MouseEvent&) override;
-    void mouseUp (const juce::MouseEvent&) override { dragStarted = false; }
+    void mouseUp (const juce::MouseEvent&) override;
 
 private:
     PowerKickProcessor& proc;

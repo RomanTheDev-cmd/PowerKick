@@ -777,7 +777,7 @@ void PresetBrowser::Categories::mouseDown (const juce::MouseEvent& e)
 //==============================================================================
 WaveformView::WaveformView (PowerKickProcessor& p) : proc (p)
 {
-    setTooltip ("Drag this waveform into your DAW to drop the kick as a 24-bit WAV");
+    setTooltip ("Click to hear the kick; drag it into your DAW to drop it as a 24-bit WAV");
     setMouseCursor (juce::MouseCursor::DraggingHandCursor);
 }
 
@@ -857,9 +857,20 @@ void WaveformView::paint (juce::Graphics& g)
     if (hover)
     {
         g.setColour (colours::text.withAlpha (0.8f));
-        g.drawText (juce::String::fromUTF8 ("DRAG TO DAW \xe2\x86\x97"), r.reduced (14.0f, 10.0f).removeFromTop (14.0f),
+        g.drawText (juce::String::fromUTF8 ("CLICK TO PLAY \xc2\xb7 DRAG TO DAW \xe2\x86\x97"), r.reduced (14.0f, 10.0f).removeFromTop (14.0f),
                     juce::Justification::topLeft);
     }
+}
+
+// A click (no drag) plays the kick - no MIDI keyboard needed (Roman, 2026-10-23); a drag exports the WAV.
+void WaveformView::mouseUp (const juce::MouseEvent& e)
+{
+    if (! dragStarted && ! e.mouseWasDraggedSinceMouseDown())
+    {
+        proc.triggerRequested = true;
+        flash();
+    }
+    dragStarted = false;
 }
 
 void WaveformView::mouseDrag (const juce::MouseEvent& e)
@@ -965,6 +976,7 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
     }
     addChildComponent (advanced); // last: lies on top of the knob area when open
     addChildComponent (browser);  // over everything below the header when open
+    waveform.setComponentID ("waveform");
     presetButton.setComponentID ("presetButton");
     browser.setComponentID ("presetBrowser");
     advancedButton.setComponentID ("advancedButton");

@@ -35,6 +35,17 @@ void setPlain (PowerKickProcessor& p, const char* id, float v)
     param->setValueNotifyingHost (param->convertTo0to1 (v));
 }
 
+// A mouse event on component c (click or drag), for the mouse handlers of the waveform.
+juce::MouseEvent mouseAt (juce::Component* c, bool dragged)
+{
+    const auto now = juce::Time::getCurrentTime();
+    const juce::Point<float> pt (20.0f, 20.0f);
+    return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), pt, {}, juce::MouseInputSource::defaultPressure,
+                             juce::MouseInputSource::defaultOrientation, juce::MouseInputSource::defaultRotation,
+                             juce::MouseInputSource::defaultTiltX, juce::MouseInputSource::defaultTiltY, c, c, now, pt, now, 1, dragged);
+}
+
+
 struct Run
 {
     double peak = 0;
@@ -340,6 +351,27 @@ void testSnapshotsKeepOversampling()
     expect (p.undoVariation() && os (p) == 1, "undoing a variation keeps OVERSAMPLE (got index " + juce::String (os (p)) + ")");
 }
 
+// Clicking the waveform plays the kick (Roman has no MIDI keyboard, 2026-10-23); dragging it still exports a WAV.
+void testWaveformClickPlays()
+{
+#if JUCE_MAC
+    juce::ScopedJuceInitialiser_GUI gui;
+    PowerKickProcessor p;
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+    auto* w = ed->findChildWithID ("waveform");
+    expect (w != nullptr, "the waveform is on the window");
+    if (w == nullptr)
+        return;
+    p.triggerRequested = false;
+    w->mouseDown (mouseAt (w, false));
+    w->mouseUp (mouseAt (w, false));
+    expect (p.triggerRequested.exchange (false), "a click on the waveform plays the kick");
+    w->mouseDown (mouseAt (w, false));
+    w->mouseUp (mouseAt (w, true));
+    expect (! p.triggerRequested.load(), "dragging the waveform (WAV export) does not play it");
+#endif
+}
+
 // The preset browser's filter: category, any of the selected groups, and words of a search text.
 void testPresetFilter()
 {
@@ -616,6 +648,7 @@ int main (int argc, char** argv)
     testMonoBus();
     testABAndVariation();
     testPreview();
+    testWaveformClickPlays();
     testEditor();
     testPresetBrowser();
     std::cout << (failures == 0 ? "PASS " : "FAILED ") << (checks - failures) << "/" << checks << " wrapper checks\n";
