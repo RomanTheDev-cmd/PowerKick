@@ -279,6 +279,67 @@ void testFactoryPresetsLoadAsMeasured()
     expect (bad == 0, "factory presets load in the plug-in as measured (" + juce::String (bad) + " differ; " + first + ")");
 }
 
+// OVERSAMPLE is a quality setting of the instance, not part of a sound: presets, A/B and
+// variations never change it (factory presets do not store it, so it used to fall back to 4x,
+// and the plug-in latency changed while the host was playing).
+void testSnapshotsKeepOversampling()
+{
+    auto os = [] (PowerKickProcessor& p) { return juce::roundToInt (rawValue (p, pk::id::oversample)); };
+    PowerKickProcessor p;
+    p.prepareToPlay (48000.0, 512);
+    // Latency differs between 2x and 4x (4x and 8x round to the same samples), so the latency
+    // check runs at 2x; the setting itself is checked at 2x and 8x.
+    setPlain (p, pk::id::oversample, 1.0f);
+    play (p, 4);
+    const int latency4x = p.getLatencySamples();
+    const auto& all = p.library.all();
+    for (const int choice : { 0, 2 })
+    {
+        setPlain (p, pk::id::oversample, (float) choice);
+        play (p, 4);
+        const int latencyChosen = p.getLatencySamples();
+        if (choice == 0)
+            expect (latencyChosen != latency4x, "2x and 4x report different latencies, else the latency check is empty (2x "
+                    + juce::String (latencyChosen) + ", 4x " + juce::String (latency4x) + ")");
+        const juce::String name = juce::String (2 << choice) + "x";
+        int kept = 0, loaded = 0, withControl = 0;
+        for (int i = 0; i < (int) all.size(); ++i)
+        {
+            p.loadPreset (i);
+            if (juce::roundToInt (rawValue (p, pk::id::oversample)) == choice) ++kept;
+            // Control: the preset itself was applied.
+            if (const auto it = all[(size_t) i].values.find (pk::id::decay); it != all[(size_t) i].values.end())
+            {
+                ++withControl;
+                if (std::abs (rawValue (p, pk::id::decay) - it->second) < 1.0e-3f) ++loaded;
+            }
+        }
+        expect (kept == (int) all.size(), "every preset keeps OVERSAMPLE " + name + " (" + juce::String (kept) + "/" + juce::String ((int) all.size()) + ")");
+        expect (withControl > 0 && loaded == withControl, "the presets themselves were applied (DECAY " + juce::String (loaded) + "/" + juce::String (withControl) + ")");
+        play (p, 4);
+        expect (p.getLatencySamples() == latencyChosen, "latency at " + name + " unchanged by preset switches ("
+                + juce::String (p.getLatencySamples()) + " vs " + juce::String (latencyChosen) + ")");
+    }
+
+    // A saved preset that does contain OVERSAMPLE does not change it either.
+    pk::Snapshot saved { { pk::id::oversample, 0.0f }, { pk::id::decay, 0.3f } };
+    pk::applySnapshot (p.state, saved);
+    expect (os (p) == 2 && std::abs (rawValue (p, pk::id::decay) - 0.3f) < 1.0e-3f, "a snapshot with OVERSAMPLE 2x keeps 8x but applies its DECAY");
+
+    // A/B: slot A is captured at 8x; the setting changed while on B stays when going back to A.
+    setPlain (p, pk::id::oversample, 2.0f);
+    p.switchSlot (true);
+    expect (os (p) == 2, "switching to B keeps OVERSAMPLE");
+    setPlain (p, pk::id::oversample, 0.0f);
+    p.switchSlot (false);
+    expect (os (p) == 0, "switching back to A keeps the OVERSAMPLE chosen on B (got index " + juce::String (os (p)) + ")");
+
+    // Variation undo restores the sound, not an older OVERSAMPLE.
+    p.makeVariation();
+    setPlain (p, pk::id::oversample, 1.0f);
+    expect (p.undoVariation() && os (p) == 1, "undoing a variation keeps OVERSAMPLE (got index " + juce::String (os (p)) + ")");
+}
+
 // The preset browser's filter: category, any of the selected groups, and words of a search text.
 void testPresetFilter()
 {
@@ -546,6 +607,7 @@ int main (int argc, char** argv)
     testLegacyProjectMigration();
     testPresetSwitchingWhilePlaying();
     testOversamplingLatencyTracksProcessing();
+    testSnapshotsKeepOversampling();
     testLatencyOfStateRestoredAfterPrepare();
     testReprepareMatchesFresh();
     testFactoryPresetsLoadAsMeasured();
