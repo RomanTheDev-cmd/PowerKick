@@ -374,6 +374,11 @@ void applySnapshot (juce::AudioProcessorValueTreeState& state, const Snapshot& v
 {
     for (const auto& pid : allParamIds())
     {
+        // OVERSAMPLE is a quality setting of this instance, not part of a sound: presets (and A/B,
+        // variations) never change it. Factory presets do not store it, so a switch used to fall
+        // back to 4x and change the plug-in latency while the host was playing.
+        if (pid == id::oversample)
+            continue;
         auto* param = dynamic_cast<juce::RangedAudioParameter*> (state.getParameter (pid));
         if (param == nullptr)
             continue;
