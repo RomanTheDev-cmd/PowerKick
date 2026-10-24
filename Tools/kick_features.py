@@ -71,6 +71,21 @@ def _f0_track(mono, sr):
     return 12 * np.log2(tr / 55.0)
 
 
+def _tonal(mono, sr):
+    """Spectral flatness of the mids (300..3000 Hz) 15..60 ms and 60..140 ms after the onset, in dB (0 = noise,
+    very negative = pure tones). Reference kicks are noisy there; a kick whose mids ring as a harmonic series
+    sounds like a synth note or a bell (Roman's listening test, 2026-10-23)."""
+    out = []
+    for t0, t1 in ((0.015, 0.06), (0.06, 0.14)):
+        seg = mono[int(t0 * sr): int(t1 * sr)]
+        n = 1 << 15
+        X = np.abs(np.fft.rfft(seg * np.hanning(len(seg)), n)) ** 2 + 1e-30
+        f = np.fft.rfftfreq(n, 1 / sr)
+        b = X[(f >= 300) & (f <= 3000)]
+        out.append(10 * np.log10(np.exp(np.mean(np.log(b))) / np.mean(b)))
+    return np.array(out)
+
+
 def features(x, sr):
     """x: (n, 2) float array."""
     mono = x.mean(axis=1)
@@ -96,10 +111,11 @@ def features(x, sr):
     for lo, hi in STEREO_BANDS:
         m = (f >= lo) & (f < hi)
         st.append(np.clip(10 * np.log10((np.sum(np.abs(S[m]) ** 2) + 1e-30) / (np.sum(np.abs(M[m]) ** 2) + 1e-30)), -40, 0))
-    return {"env": env, "f0": _f0_track(mono, sr), "spec": spec, "side": np.array(st), "peak_db": peak_db}
+    return {"env": env, "f0": _f0_track(mono, sr), "spec": spec, "side": np.array(st), "peak_db": peak_db,
+            "tonal": _tonal(mono, sr)}
 
 
-WEIGHTS = {"env": 1.0, "f0": 1.5, "spec": 1.0, "side": 0.15}
+WEIGHTS = {"env": 1.0, "f0": 1.5, "spec": 1.0, "side": 0.15, "tonal": 1.5}
 
 
 def _resolvable():
@@ -123,5 +139,7 @@ def distance(a, b, detail=False):
     d_spec = float(np.mean(np.abs(a["spec"] - b["spec"])[VALID]))
     d_side = float(np.mean(np.abs(a["side"] - b["side"])))
     parts = {"env": d_env, "f0": d_f0, "spec": d_spec, "side": d_side}
+    if "tonal" in a and "tonal" in b:  # older feature files have no tonality
+        parts["tonal"] = float(np.mean(np.abs(a["tonal"] - b["tonal"])))
     total = sum(WEIGHTS[k] * v for k, v in parts.items())
     return (total, parts) if detail else total

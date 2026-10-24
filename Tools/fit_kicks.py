@@ -49,7 +49,7 @@ class Renderer:
 
 
 def load_refs():
-    return pickle.load(open(os.path.join(HERE, "..", "Референсы", "kick_features.pkl"), "rb"))
+    return pickle.load(open(os.path.join(HERE, "..", "Референсы", os.environ.get("PK_REFS", "kick_features.pkl")), "rb"))
 
 
 def load_presets():
