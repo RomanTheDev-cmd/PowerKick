@@ -199,6 +199,37 @@ void testPresetsRender (bool report)
     }
 }
 
+// True peak: the largest of the samples and of the 3 points between each pair of samples (4x windowed-sinc,
+// Blackman, 64 taps), evaluated around the loud samples. The factory level is set on it since 2026-10-24: a sample
+// peak of -1 dBFS left up to +0.86 dBTP between the samples (Tools/normalize_peaks.py measures the same way).
+double truePeak (const float* x, int n)
+{
+    static const auto taps = []
+    {
+        std::array<std::array<double, 64>, 3> t {};
+        for (int f = 1; f <= 3; ++f)
+            for (int k = 0; k < 64; ++k)
+            {
+                const double d = (k - 31) - f / 4.0, a = juce::MathConstants<double>::pi * d;
+                const double w = 0.42 + 0.5 * std::cos (a / 32.0) + 0.08 * std::cos (2.0 * a / 32.0);
+                t[(size_t) f - 1][(size_t) k] = (d == 0.0 ? 1.0 : std::sin (a) / a) * w;
+            }
+        return t;
+    }();
+    double mx = 0.0;
+    for (int i = 0; i < n; ++i) mx = std::max (mx, (double) std::abs (x[i]));
+    double best = mx;
+    for (int i = 31; i < n - 33; ++i)
+        if (std::abs (x[i]) >= 0.5 * mx || std::abs (x[i + 1]) >= 0.5 * mx)
+            for (const auto& h : taps)
+            {
+                double s = 0.0;
+                for (int k = 0; k < 64; ++k) s += x[i - 31 + k] * h[(size_t) k];
+                best = std::max (best, std::abs (s));
+            }
+    return best;
+}
+
 // Peak a preset would reach with hits every `step` samples (velocities alternating 1.0 / 0.8), measured
 // 24 dB under its OUTPUT so the emergency ceiling cannot hide it (OUTPUT is linear after the drive).
 double retriggerPeak (KickParams p, int step, double bpm, bool fullVelocity = false)
@@ -217,7 +248,7 @@ double retriggerPeak (KickParams p, int step, double bpm, bool fullVelocity = fa
                 m.addEvent (juce::MidiMessage::noteOn (1, 60, (fullVelocity || (hit++ % 2) == 0) ? 1.0f : 0.8f), t - pos);
         e.process (out.getWritePointer (0, pos), out.getWritePointer (1, pos), 512, m, 0, p, bpm, false);
     }
-    return std::max (out.getMagnitude (0, 0, total), out.getMagnitude (1, 0, total)) * std::pow (10.0, 24.0 / 20.0);
+    return std::max (truePeak (out.getReadPointer (0), total), truePeak (out.getReadPointer (1), total)) * std::pow (10.0, 24.0 / 20.0);
 }
 
 void testRetriggerPeaks()
@@ -225,7 +256,7 @@ void testRetriggerPeaks()
     // Rolls on 16ths and 32nds at 150 BPM: overlapping hits must not reach the emergency ceiling
     // (0.9), which would otherwise shape the sound.
     // The factory level (Tools/normalize_peaks.py) puts the loudest of these cases and single hits at
-    // velocities 1.0 / 0.85 / 0.7 at -1 dBFS (OUTPUT rounded down to its 0.1 dB step).
+    // velocities 1.0 / 0.85 / 0.7 at -1 dBTP (true peak, OUTPUT rounded down to its 0.1 dB step).
     int bad = 0, offLevel = 0;
     double worst = 0.0, quietest = 1.0;
     juce::String worstName, quietestName;
@@ -233,22 +264,26 @@ void testRetriggerPeaks()
     {
         const auto p = paramsFromSnapshot (pr.values);
         double loudest = 0.0;
-        for (int step : { 4800, 2400 })
+        // 16ths and 32nds (also accented), and since 2026-10-24 four on the floor at 130 / 150 / 170 BPM and 8ths:
+        // there the tail of a hit is still sounding when the next one comes.
+        for (auto [step, bpm] : { std::pair { 4800, 150.0 }, std::pair { 2400, 150.0 }, std::pair { 22154, 130.0 },
+                                  std::pair { 19200, 150.0 }, std::pair { 16941, 170.0 }, std::pair { 9600, 150.0 } })
         {
-            const double pk = std::max (retriggerPeak (p, step, 150.0), retriggerPeak (p, step, 150.0, true));
+            const double pk = step < 9600 ? std::max (retriggerPeak (p, step, bpm), retriggerPeak (p, step, bpm, true))
+                                          : retriggerPeak (p, step, bpm, true);
             loudest = std::max (loudest, pk);
             if (pk > worst) { worst = pk; worstName = pr.name; }
             if (pk > 0.9)
             {
                 ++bad;
-                std::cout << "  retrigger " << (step == 4800 ? "1/16" : "1/32") << " " << pr.name << ": " << juce::String (db (pk), 2) << " dBFS\n";
+                std::cout << "  retrigger every " << step << " samples at " << bpm << " BPM " << pr.name << ": " << juce::String (db (pk), 2) << " dBTP\n";
             }
         }
         auto probe = p; probe.outputDb -= 24.0f;
         for (float velocity : { 1.0f, 0.85f, 0.7f })
         {
             const auto hit = stream (probe, 48000.0, 512, 1, 0, 140.0, velocity);
-            loudest = std::max (loudest, std::max (hit.getMagnitude (0, 0, 28800), hit.getMagnitude (1, 0, 28800))
+            loudest = std::max (loudest, std::max (truePeak (hit.getReadPointer (0), 28800), truePeak (hit.getReadPointer (1), 28800))
                                              * std::pow (10.0, 24.0 / 20.0));
         }
         if (loudest < quietest) { quietest = loudest; quietestName = pr.name; }
@@ -256,13 +291,13 @@ void testRetriggerPeaks()
         {
             ++offLevel;
             if (offLevel <= 5)
-                std::cout << "  factory level " << pr.name << ": " << juce::String (db (loudest), 2) << " dBFS\n";
+                std::cout << "  factory level " << pr.name << ": " << juce::String (db (loudest), 2) << " dBTP\n";
         }
     }
-    expect (bad == 0, "rolls on 16ths/32nds stay under the emergency ceiling (" + juce::String (bad) + " cases over, worst "
+    expect (bad == 0, "16ths, 32nds, 8ths and four on the floor stay under the emergency ceiling (" + juce::String (bad) + " cases over, worst "
                       + worstName + " " + juce::String (db (worst), 2) + " dBFS)");
-    expect (offLevel == 0, "every factory preset peaks at -1 dBFS over single hits and rolls (" + juce::String (offLevel)
-                           + " presets off, quietest " + quietestName + " " + juce::String (db (quietest), 2) + " dBFS)");
+    expect (offLevel == 0, "every factory preset peaks at -1 dBTP (true peak) over single hits and rolls (" + juce::String (offLevel)
+                           + " presets off, quietest " + quietestName + " " + juce::String (db (quietest), 2) + " dBTP)");
 }
 
 void testWholeChainHandoff()
@@ -824,9 +859,9 @@ struct Fingerprint { const char* name; int length; double energy, s0, s1; };
 const Fingerprint fingerprints[] = {
 { "Hard Techno Core", 23520, 7543.6451168423609, 0.756459057, -0.508711815 },
 { "Classic Punch", 35265, 4643.5606063465666, 0.864766657, 0.413602620 },
-{ "Classic Schranz", 21542, 5255.2423894902031, -0.168859690, 0.257742733 },
+{ "Classic Schranz", 21467, 4271.6214034582272, -0.152239025, 0.232373416 }, // OUTPUT -1.9 -> -2.8 dB (true-peak level with 4/4 and 8ths, 2026-10-24): gain only
 { "Industrial Rumble", 34425, 6680.8119497012085, -0.560978234, 0.513331771 },
-{ "Gabba Lite", 25372, 6381.6410432162120, -0.424090356, 0.494250596 },
+{ "Gabba Lite", 25277, 4730.7759797020726, -0.365139157, 0.425546676 }, // OUTPUT -0.8 -> -2.1 dB (true-peak level with 4/4 and 8ths, 2026-10-24): gain only
 };
 
 void testExistingSoundUnchanged()
