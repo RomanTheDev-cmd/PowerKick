@@ -40,6 +40,14 @@ inline double warm (double x) noexcept
     return x + 0.06 * c * c - 0.02 * c * c * c;
 }
 
+// Stronger warmth for a driven signal (+/-1): 2nd harmonic ~-18 dB, 3rd ~-36 dB at full level - the rounded,
+// thicker sound of an analogue drive stage (Roman, 2026-10-28: the first, gentler version was not audible).
+inline double warmDrive (double x) noexcept
+{
+    const double c = std::clamp (x, -2.0, 2.0);
+    return x + 0.12 * c * c - 0.04 * c * c * c;
+}
+
 struct OnePole
 {
     double a = 0.0, z = 0.0;

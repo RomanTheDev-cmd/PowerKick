@@ -1130,6 +1130,10 @@ void testAnalogue()
     expect (hitsAna > -60.0 && hitsAna > hitsDig + 10.0, "ANALOGUE: every hit a little different (hit 3 vs 4: " + juce::String (hitsAna, 1)
                                                           + " dB, DIGITAL " + juce::String (hitsDig, 1) + " dB)");
     expect (diffDb (ana2, 0, ana, 0, ana.getNumSamples()) < -200.0, "ANALOGUE is repeatable (a bounce is the same every time)");
+    // Audible in the timbre (Roman, 2026-10-28: "разницы не слышно" with the first version): the attack's top softer.
+    const double topDig = segDb (dig, 0.0, 0.06, 3000.0, 10000.0), topAna = segDb (ana, 0.0, 0.06, 3000.0, 10000.0);
+    expect (topDig - topAna > 2.0, "ANALOGUE is audibly softer on the attack: 3-10 kHz " + juce::String (topDig - topAna, 1) + " dB lower");
+    std::cout << "  ANALOGUE Classic Schranz attack 3-10 kHz: " << juce::String (topAna - topDig, 1) << " dB\n";
     std::cout << "  ANALOGUE Classic Schranz: change " << juce::String (change, 1) << " dB, level " << juce::String (lvl, 2)
               << " dB, hit 3 vs 4 " << juce::String (hitsAna, 1) << " dB (DIGITAL " << juce::String (hitsDig, 1) << " dB)\n";
 
