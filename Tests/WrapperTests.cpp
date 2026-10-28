@@ -630,6 +630,45 @@ int snapshot (const juce::File& dir)
     return 0;
 }
 
+
+// DIGITAL | ANALOGUE (2026-10-28): a parameter in Digital by default, kept over preset changes like OVERSAMPLE,
+// a two-button switch in the header that overlaps nothing.
+void testAnalogueSwitch()
+{
+    PowerKickProcessor p;
+    p.prepareToPlay (48000.0, 512);
+    auto* prm = p.state.getParameter (pk::id::analog);
+    expect (prm != nullptr && prm->getValue() == 0.0f, "DIGITAL | ANALOGUE exists and starts in DIGITAL");
+    if (prm == nullptr) return;
+    setPlain (p, pk::id::analog, 1.0f);
+    const auto& all = p.library.all();
+    int kept = 0, tried = 0;
+    for (int i = 0; i < (int) all.size(); i += 29, ++tried)
+    {
+        p.loadPreset (i);
+        kept += rawValue (p, pk::id::analog) > 0.5f ? 1 : 0;
+    }
+    expect (kept == tried, "a preset change keeps ANALOGUE (" + juce::String (kept) + " of " + juce::String (tried) + ")");
+    setPlain (p, pk::id::analog, 0.0f);
+    std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
+    ed->setSize (920, 660);
+    auto* seg = ed->findChildWithID ("analog");
+    expect (seg != nullptr && seg->getNumChildComponents() == 2 && ed->getLocalBounds().contains (seg->getBounds()),
+            "the header shows DIGITAL | ANALOGUE");
+    if (seg == nullptr || seg->getNumChildComponents() != 2) return;
+    bool clear = true;
+    for (auto* c : ed->getChildren())
+        if (c != seg && c->isVisible() && c->getBounds().intersects (seg->getBounds()))
+        {
+            clear = false;
+            std::cout << "  overlaps " << c->getComponentID() << "\n";
+        }
+    expect (clear, "DIGITAL | ANALOGUE overlaps no other control");
+    auto* analogueButton = dynamic_cast<juce::Button*> (seg->getChildComponent (1));
+    if (analogueButton != nullptr && analogueButton->onClick != nullptr) analogueButton->onClick();
+    expect (rawValue (p, pk::id::analog) > 0.5f, "the ANALOGUE button switches the sound to ANALOGUE");
+}
+
 int main (int argc, char** argv)
 {
     if (argc > 2 && juce::String (argv[1]) == "--snapshot")
@@ -640,6 +679,7 @@ int main (int argc, char** argv)
     testPresetSwitchingWhilePlaying();
     testOversamplingLatencyTracksProcessing();
     testSnapshotsKeepOversampling();
+    testAnalogueSwitch();
     testLatencyOfStateRestoredAfterPrepare();
     testReprepareMatchesFresh();
     testFactoryPresetsLoadAsMeasured();

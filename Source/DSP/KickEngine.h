@@ -4,6 +4,8 @@
 #include "Filters.h"
 #include "../Params.h"
 
+#include "AnalogCharacter.h"
+
 namespace pk::dsp
 {
 inline double dbToGain (double db) noexcept { return std::pow (10.0, db / 20.0); }
@@ -17,7 +19,7 @@ class KickVoice
 public:
     void prepare (double sampleRate) { sr = sampleRate; active = false; }
 
-    void start (const KickParams& p, int note, float velocity, unsigned int seed, double bpm = 140.0)
+    void start (const KickParams& p, int note, float velocity, unsigned int seed, double bpm = 140.0, const double* ana = nullptr)
     {
         const double keyOffset = p.keyTrack ? (note - p.keyRoot) : 0.0;
         f0 = baseFrequency (p.tune) * std::pow (2.0, keyOffset / 12.0);
@@ -71,6 +73,18 @@ public:
         fade = 1.0;
         fadeStep = 0.0;
         lastAmp = 0.0;
+        // ANALOGUE: every hit a little different, like an analogue drum circuit - body pitch +/-3 cents, sweep time
+        // +/-4 %, sweep depth +/-3 %, click +/-0.6 dB; a warmer body and a softer click (one pole, 9 kHz).
+        analogHit = ana != nullptr;
+        if (analogHit)
+        {
+            f0 *= std::exp2 (3.0 * ana[0] / 1200.0);
+            pitchTau *= 1.0 + 0.04 * ana[1];
+            depth *= 1.0 + 0.03 * ana[2];
+            clickGain *= std::pow (10.0, 0.6 * ana[3] / 20.0);
+            clickLp.set (9000.0, sr);
+            clickLp.reset();
+        }
         active = true;
     }
 
@@ -102,7 +116,11 @@ public:
         const double freq = std::min (f0 * std::exp2 (sweep / 12.0), sr * 0.45);
         phase += freq / sr;
         phase -= std::floor (phase);
-        const double s = std::tanh (satGain * std::sin (2.0 * pi * phase)) * satNorm;
+        const double sn = std::sin (2.0 * pi * phase);
+        // ANALOGUE: a slightly asymmetric body - a little 2nd harmonic (~-28 dB) on the saturated sine, peaks within
+        // ~0.7 dB; the DC blocker after the drive removes the small offset. (A biased tanh swelled the negative half.)
+        const double sd = std::tanh (satGain * sn) * satNorm;
+        const double s = analogHit ? sd + 0.08 * sd * sd - 0.04 : sd;
 
         double a;
         if (t < hold)
@@ -123,6 +141,7 @@ public:
             subOut = std::sin (2.0 * pi * phase) * a * velGain * 0.8 * subLevel;
 
         clickOut = renderClick() * fade * clickGain;
+        if (analogHit) clickOut = clickLp.tick (clickOut);
 
         t += 1.0 / sr;
         if (fadeStep > 0.0)
@@ -177,6 +196,8 @@ private:
     double decaySec = 0.4, hold = 0.05, curve = 2.0, satGain = 2.0, satNorm = 1.0, velGain = 1.0;
     ClickType clickType = ClickType::sharp;
     double clickTone = 0.5, clickGain = 0.0, clickTau = 0.002, blipFreq = 1000.0;
+    bool analogHit = false;
+    power_analog::OnePole clickLp;
     double metalPhase[6] {}, metalInc[6] {};
     double fade = 1.0, fadeStep = 0.0, lastAmp = 0.0;
     bool active = false;
@@ -513,6 +534,7 @@ public:
         stereo.prepare (sr);
         lpD.set (90.0, sr); lpC.set (90.0, sr);
         dc.set (12.0, sr);
+        anaTop.set (15000.0, sr); anaBlend.prepare (sr);
         mono.setSize (1, blockSize);
         clean.assign ((size_t) blockSize, 0.0);
         noteTime.assign ((size_t) blockSize, 1.0e9);
@@ -631,6 +653,7 @@ private:
         oversamplers[activeOs]->reset(); // the others are reset when they are switched in
         cleanDelay.reset(); subDelay.reset();
         lpD.reset(); lpC.reset(); dc.reset();
+        anaRand.seed (0x5EED2810u); anaTop.reset();
         scoop.reset(); scoopDb = 0.0; scoopCountdown = 0;
         scoop.peak (480.0, 0.6, 0.0, sr);
         bodyScoop = SvfBell(); bodyScoopDb = 0.0;
@@ -647,7 +670,8 @@ private:
         auto& v = ! voices[next].isActive() ? voices[next] : voices[1 - next];
         // The click noise is the same on every hit (as in a sample, and as the presets were
         // fitted and levelled): a random burst would peak differently from hit to hit.
-        v.start (p, note, velocity, clickSeed, bpm);
+        const double ana[4] = { anaRand.next(), anaRand.next(), anaRand.next(), anaRand.next() }; // drawn in DIGITAL too
+        v.start (p, note, velocity, clickSeed, bpm, p.analog ? ana : nullptr);
         next = 1 - next;
         rumble.trigger();
     }
@@ -791,6 +815,7 @@ private:
             y += subDelay.read ((double) lat);
 
             y = eq.tick (y);
+            y += anaBlend.tick (p.analog) * (anaTop.tick (y) - y); // ANALOGUE: softer top (one pole, 15 kHz)
             y = dc.tick (y) * outGain.next();
 
             double l, r;
@@ -881,6 +906,9 @@ private:
     double scoopDb = 0.0;
     SvfBell bodyScoop;
     double bodyScoopDb = 0.0;
+    power_analog::Random anaRand;
+    power_analog::OnePole anaTop;
+    power_analog::Blend anaBlend;
     double bodyToneSm = 1.0, bodyToneCoef = 0.999, sinceNote = 1.0e9;
     std::vector<double> noteTime;
     std::vector<double> handoffGain;

@@ -44,6 +44,7 @@ namespace id
     inline constexpr const char* keyRoot    = "keyRoot";
     inline constexpr const char* modDrive   = "modDrive";
     inline constexpr const char* choke      = "choke";
+    inline constexpr const char* analog     = "analog";
     inline constexpr const char* rumbleMode = "rumbleMode";
 }
 
@@ -88,6 +89,7 @@ struct KickParams
     float pitchCurve = 0.0f;    // 0 exponential sweep .. 1 slower, rounder sweep
     int keyRoot = 60;           // key tracking root note
     float modDrive = 0.0f;      // mod wheel -> drive
+    bool analog = false;        // ANALOGUE: per-hit spread, slight drift, warm body, softer click and top (2026-10-28)
     bool choke = false;         // a MIDI note-off cuts the kick (note length = kick length)
     int rumbleMode = 0;         // 0 classic comb rumble, 1 diffuse reverb rumble
 };

@@ -1040,6 +1040,10 @@ PowerKickEditor::PowerKickEditor (PowerKickProcessor& p)
     setResizeLimits (736, 528, 1380, 990);
     getConstrainer()->setFixedAspectRatio (920.0 / 660.0);
     setSize (920, 660);
+    analogMode = std::make_unique<pk::ui::Segment> (p.state, pk::id::analog, juce::StringArray { "DIGITAL", "ANALOGUE" }, "DIGITAL: the exact sound. ANALOGUE: slight pitch drift, every hit a little different, warmth and a softer top");
+    analogMode->setComponentID ("analog");
+    addAndMakeVisible (*analogMode);
+    resized();
     refreshHeader();
     startTimerHz (30);
 }
@@ -1107,6 +1111,12 @@ void PowerKickEditor::resized()
     header.removeFromRight (S (4));
     aButton.setBounds (header.removeFromRight (S (34)));
     monoBadge = header.removeFromRight (S (112)).reduced (S (8), S (2));
+    if (analogMode != nullptr) // left, after the logo (the preset name owns the centre)
+    {
+        auto left = getLocalBounds().removeFromTop (S (60)).reduced (S (24), S (14));
+        left.removeFromLeft (S (122));
+        analogMode->setBounds (left.removeFromLeft (S (140)));
+    }
     auto centre = getLocalBounds().removeFromTop (S (60)).withSizeKeepingCentre (S (330), S (32));
     prevButton.setBounds (centre.removeFromLeft (S (32)));
     nextButton.setBounds (centre.removeFromRight (S (32)));

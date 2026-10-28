@@ -1103,6 +1103,54 @@ void testPresetRoundTripAndWav()
 }
 }
 
+
+// DIGITAL | ANALOGUE (Roman, 2026-10-28): "при переключении должен быть легкий дрейф и прочие особенности аналога,
+// соответственно то что сейчас это digital". Every other test (and the fingerprints) runs in Digital.
+void testAnalogue()
+{
+    auto p = preset ("Classic Schranz");
+    auto a = p; a.analog = true;
+    const auto dig = stream (p, 48000.0, 512, 4, 48000), ana = stream (a, 48000.0, 512, 4, 48000), ana2 = stream (a, 48000.0, 512, 4, 48000);
+    auto diffDb = [] (const juce::AudioBuffer<float>& x, int ox, const juce::AudioBuffer<float>& y, int oy, int len)
+    {
+        double d = 0.0, r = 0.0;
+        for (int c = 0; c < 2; ++c)
+            for (int i = 0; i < len; ++i)
+            {
+                d += std::pow ((double) x.getSample (c, ox + i) - y.getSample (c, oy + i), 2.0);
+                r += std::pow ((double) y.getSample (c, oy + i), 2.0);
+            }
+        return 10.0 * std::log10 (std::max (d, 1.0e-30) / std::max (r, 1.0e-30));
+    };
+    const double change = diffDb (ana, 0, dig, 0, 24000);
+    expect (change > -35.0, "ANALOGUE audibly changes Classic Schranz (" + juce::String (change, 1) + " dB)");
+    const double lvl = db (stats (ana, 0, 7200).rms) - db (stats (dig, 0, 7200).rms);
+    expect (std::abs (lvl) < 1.0, "ANALOGUE keeps the hit level within 1 dB (" + juce::String (lvl, 2) + " dB)");
+    const double hitsDig = diffDb (dig, 96000, dig, 144000, 24000), hitsAna = diffDb (ana, 96000, ana, 144000, 24000);
+    expect (hitsAna > -60.0 && hitsAna > hitsDig + 10.0, "ANALOGUE: every hit a little different (hit 3 vs 4: " + juce::String (hitsAna, 1)
+                                                          + " dB, DIGITAL " + juce::String (hitsDig, 1) + " dB)");
+    expect (diffDb (ana2, 0, ana, 0, ana.getNumSamples()) < -200.0, "ANALOGUE is repeatable (a bounce is the same every time)");
+    std::cout << "  ANALOGUE Classic Schranz: change " << juce::String (change, 1) << " dB, level " << juce::String (lvl, 2)
+              << " dB, hit 3 vs 4 " << juce::String (hitsAna, 1) << " dB (DIGITAL " << juce::String (hitsDig, 1) << " dB)\n";
+
+    int bad = 0;
+    juce::String worst;
+    double worstDb = 0.0;
+    for (const auto& pr : factoryPresets())
+    {
+        auto d = paramsFromSnapshot (pr.values), an = d;
+        an.analog = true;
+        const auto x = stream (d, 48000.0, 512), y = stream (an, 48000.0, 512);
+        const auto sx = stats (x, 0, 7200), sy = stats (y, 0, 7200);
+        const double dl = db (sy.rms) - db (sx.rms);
+        if (! stats (y).finite || stats (y).peak > 1.0 || std::abs (dl) > 1.5) ++bad;
+        if (std::abs (dl) > std::abs (worstDb)) { worstDb = dl; worst = pr.name; }
+    }
+    expect (bad == 0, "every factory preset in ANALOGUE stays finite, under 0 dBFS and within 1.5 dB of DIGITAL ("
+                      + juce::String (bad) + " off; largest level change " + worst + " " + juce::String (worstDb, 2) + " dB)");
+    std::cout << "  ANALOGUE library: largest level change " << worst << " " << juce::String (worstDb, 2) << " dB\n";
+}
+
 int main (int argc, char** argv)
 {
     // No GUI initialisation: the tests are pure DSP and file I/O (and run under Wine).
@@ -1361,6 +1409,7 @@ int main (int argc, char** argv)
     testStereoControlsAreAudible();
     testStereoSplit();
     testExistingSoundUnchanged();
+    testAnalogue();
     testAdvancedFeatures();
     testSettledPitch();
     testGatedBody();
