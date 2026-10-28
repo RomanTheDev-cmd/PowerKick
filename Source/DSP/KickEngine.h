@@ -73,16 +73,16 @@ public:
         fade = 1.0;
         fadeStep = 0.0;
         lastAmp = 0.0;
-        // ANALOGUE: every hit a little different, like an analogue drum circuit - body pitch +/-3 cents, sweep time
-        // +/-4 %, sweep depth +/-3 %, click +/-0.6 dB; a warmer body and a softer click (one pole, 9 kHz).
+        // ANALOGUE: every hit a little different, like an analogue drum circuit - body pitch +/-8 cents, sweep time
+        // +/-10 %, sweep depth +/-6 %, click +/-1.5 dB; a warmer body and a softer click (one pole, 5 kHz).
         analogHit = ana != nullptr;
         if (analogHit)
         {
-            f0 *= std::exp2 (3.0 * ana[0] / 1200.0);
-            pitchTau *= 1.0 + 0.04 * ana[1];
-            depth *= 1.0 + 0.03 * ana[2];
-            clickGain *= std::pow (10.0, 0.6 * ana[3] / 20.0);
-            clickLp.set (9000.0, sr);
+            f0 *= std::exp2 (8.0 * ana[0] / 1200.0);
+            pitchTau *= 1.0 + 0.10 * ana[1];
+            depth *= 1.0 + 0.06 * ana[2];
+            clickGain *= std::pow (10.0, 1.5 * ana[3] / 20.0);
+            clickLp.set (5000.0, sr);
             clickLp.reset();
         }
         active = true;
@@ -117,10 +117,10 @@ public:
         phase += freq / sr;
         phase -= std::floor (phase);
         const double sn = std::sin (2.0 * pi * phase);
-        // ANALOGUE: a slightly asymmetric body - a little 2nd harmonic (~-28 dB) on the saturated sine, peaks within
-        // ~0.7 dB; the DC blocker after the drive removes the small offset. (A biased tanh swelled the negative half.)
+        // ANALOGUE: an asymmetric body - 2nd harmonic (~-22 dB) on the saturated sine, peaks within ~1.3 dB; the DC
+        // blocker after the drive removes the offset. (A biased tanh swelled the negative half.)
         const double sd = std::tanh (satGain * sn) * satNorm;
-        const double s = analogHit ? sd + 0.08 * sd * sd - 0.04 : sd;
+        const double s = analogHit ? sd + 0.15 * sd * sd - 0.075 : sd;
 
         double a;
         if (t < hold)
@@ -534,7 +534,7 @@ public:
         stereo.prepare (sr);
         lpD.set (90.0, sr); lpC.set (90.0, sr);
         dc.set (12.0, sr);
-        anaTop.set (15000.0, sr); anaBlend.prepare (sr);
+        anaTop.set (8000.0, sr); anaBlend.prepare (sr);
         mono.setSize (1, blockSize);
         clean.assign ((size_t) blockSize, 0.0);
         noteTime.assign ((size_t) blockSize, 1.0e9);
@@ -815,7 +815,7 @@ private:
             y += subDelay.read ((double) lat);
 
             y = eq.tick (y);
-            y += anaBlend.tick (p.analog) * (anaTop.tick (y) - y); // ANALOGUE: softer top (one pole, 15 kHz)
+            y += anaBlend.tick (p.analog) * (anaTop.tick (y) - y); // ANALOGUE: softer top (one pole, 8 kHz)
             y = dc.tick (y) * outGain.next();
 
             double l, r;
