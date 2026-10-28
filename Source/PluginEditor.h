@@ -239,6 +239,7 @@ private:
     bool soundDirty = true;
     int lastHit = 0, dirtyAge = 0;
     juce::Rectangle<int> displayArea, knobArea, footerArea, monoBadge;
+    std::unique_ptr<pk::ui::Segment> analogMode; // DIGITAL | ANALOGUE, in the header (2026-10-28)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PowerKickEditor)
 };

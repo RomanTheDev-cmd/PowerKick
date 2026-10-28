@@ -48,7 +48,7 @@ const juce::StringArray& allParamIds()
                                          id::clickType, id::clickTone, id::rumbleTime, id::rumbleSync,
                                          id::velSens, id::keyTrack, id::bodyTone, id::pitchFall, id::splitFreq,
                                          id::beatLength, id::subLevel, id::startPhase, id::driveEnv, id::velDrive,
-                                         id::oversample, id::pitchCurve, id::keyRoot, id::modDrive, id::choke, id::rumbleMode };
+                                         id::oversample, id::pitchCurve, id::keyRoot, id::modDrive, id::choke, id::rumbleMode, id::analog };
     return ids;
 }
 
@@ -125,6 +125,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
                                        Attr().withStringFromValueFunction ([] (float v, int) { return juce::MidiMessage::getMidiNoteName (juce::roundToInt (v), true, true, 3); })));
     layout.add (unit (id::modDrive, "Mod Wheel Drive", 0.0f));
     layout.add (std::make_unique<APB> (juce::ParameterID { id::choke, 1 }, "Choke", false));
+    // DIGITAL | ANALOGUE (Roman, 2026-10-28): Digital is the sound as it was; Analogue adds slight drift, warmth and a softer top.
+    layout.add (std::make_unique<APC> (juce::ParameterID { id::analog, 1 }, "Digital/Analogue", juce::StringArray { "Digital", "Analogue" }, 0));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::rumbleMode, 1 }, "Rumble Mode", juce::StringArray { "Classic", "Reverb" }, 0));
     return layout;
 }
@@ -167,6 +169,7 @@ KickParams readParams (const juce::AudioProcessorValueTreeState& s)
     p.keyRoot = juce::roundToInt (v (id::keyRoot));
     p.modDrive = v (id::modDrive);
     p.choke = v (id::choke) > 0.5f;
+    p.analog = v (id::analog) > 0.5f;
     p.rumbleMode = juce::roundToInt (v (id::rumbleMode));
     return p;
 }

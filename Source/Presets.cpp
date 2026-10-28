@@ -358,7 +358,7 @@ const Snapshot& legacyNeutral()
                                     { id::beatLength, 0.0f }, { id::subLevel, 0.0f }, { id::startPhase, 0.0f },
                                     { id::driveEnv, 0.0f }, { id::velDrive, 0.0f }, { id::oversample, 1.0f },
                                     { id::pitchCurve, 0.0f }, { id::keyRoot, 60.0f }, { id::modDrive, 0.0f },
-                                    { id::choke, 0.0f }, { id::rumbleMode, 0.0f } };
+                                    { id::choke, 0.0f }, { id::rumbleMode, 0.0f }, { id::analog, 0.0f } };
     return neutral;
 }
 
@@ -377,7 +377,8 @@ void applySnapshot (juce::AudioProcessorValueTreeState& state, const Snapshot& v
         // OVERSAMPLE is a quality setting of this instance, not part of a sound: presets (and A/B,
         // variations) never change it. Factory presets do not store it, so a switch used to fall
         // back to 4x and change the plug-in latency while the host was playing.
-        if (pid == id::oversample)
+        // DIGITAL | ANALOGUE is kept the same way: a character switch over any preset.
+        if (pid == id::oversample || pid == id::analog)
             continue;
         auto* param = dynamic_cast<juce::RangedAudioParameter*> (state.getParameter (pid));
         if (param == nullptr)
@@ -423,6 +424,7 @@ KickParams paramsFromSnapshot (const Snapshot& s)
     p.startPhase = get (id::startPhase, p.startPhase);
     p.driveEnv = get (id::driveEnv, p.driveEnv);
     p.velDrive = get (id::velDrive, p.velDrive);
+    p.analog = get (id::analog, 0.0f) > 0.5f;
     p.oversampleIndex = juce::roundToInt (get (id::oversample, (float) p.oversampleIndex));
     p.pitchCurve = get (id::pitchCurve, p.pitchCurve);
     p.keyRoot = juce::roundToInt (get (id::keyRoot, (float) p.keyRoot));
