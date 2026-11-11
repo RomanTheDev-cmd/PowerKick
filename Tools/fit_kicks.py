@@ -25,6 +25,7 @@ SPACE = {
     "tune": (-9, 9), "decay": (0.05, 0.9), "punch": (0, 1), "body": (0, 1), "click": (0, 1), "drive": (0, 1),
     "character": (0, 1), "rumble": (0, 1), "pitchDepth": (6, 48), "pitchTime": (4, 120),
     "clickTone": (0, 1), "rumbleTime": (0, 1), "width": (0, 100), "bodyTone": (0, 1), "pitchFall": (0, 24),
+    "weight": (0, 1),   # 1.2: the 2nd harmonic of the body
 }
 CHOICES = {"driveMode": 3, "charMode": 5, "clickType": 3}
 
@@ -132,7 +133,7 @@ def fit_one(job):
         f = r.feat({**p, "output": FIT_OUTPUT})
         return (1e9, {}) if f is None else distance(f, target, True)
     best, (bc, bparts) = None, (1e9, {})
-    defaults = {"bodyTone": 1.0, "pitchFall": 0.0}
+    defaults = {"bodyTone": 1.0, "pitchFall": 0.0, "weight": 0.0}
     starts = [{**defaults, **s} for s in starts]
     for s in starts + [random_params(rng) for _ in range(4)]:
         c, parts = cost(s)

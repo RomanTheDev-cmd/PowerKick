@@ -275,6 +275,7 @@ AdvancedPanel::AdvancedPanel (juce::AudioProcessorValueTreeState& s)
       bodyTone (s, pk::id::bodyTone, "TONE", "Mid scoop of the body after the attack: 0 = deep scoop, 100 = none", true),
       subLevel (s, pk::id::subLevel, "SUB", "Clean sine under the driven body, same pitch, never distorted", true),
       startPhase (s, pk::id::startPhase, "PHASE", "Start of the body waveform (0-90 degrees): more push on the first cycle", true),
+      weight (s, pk::id::weight, "WEIGHT", "Second harmonic of the body: audible weight around 100 Hz, as in real hard-techno kicks", true),
       driveEnv (s, pk::id::driveEnv, "ATTACK", "Extra drive on the attack (up to +24 dB), fading over about 30 ms", true),
       velDrive (s, pk::id::velDrive, "VELOCITY", "Softer notes drive less", true),
       modDrive (s, pk::id::modDrive, "MOD", "Mod wheel adds drive (up to +24 dB)", true),
@@ -285,7 +286,7 @@ AdvancedPanel::AdvancedPanel (juce::AudioProcessorValueTreeState& s)
       oversample (s, pk::id::oversample, { "2x", "4x", "8x" }, "Oversampling of the drive: higher = cleaner top, more CPU")
 {
     for (auto* c : std::initializer_list<juce::Component*> { &pitchDepth, &pitchTime, &pitchCurve, &pitchFall, &keyRoot, &clickTone,
-                                                            &rumbleTime, &bodyTone, &subLevel, &startPhase, &driveEnv, &velDrive,
+                                                            &rumbleTime, &bodyTone, &subLevel, &startPhase, &weight, &driveEnv, &velDrive,
                                                             &modDrive, &velSens, &beatLength, &rumbleMode, &choke, &oversample,
                                                             &closeButton })
         addAndMakeVisible (c);
@@ -341,7 +342,7 @@ void AdvancedPanel::resized()
     struct Group { const char* caption; std::vector<Knob*> knobs; };
     const std::vector<Group> rowsA { { "PITCH", { &pitchDepth, &pitchTime, &pitchCurve, &pitchFall, &keyRoot } },
                                      { "CLICK / RUMBLE", { &clickTone, &rumbleTime } } };
-    const std::vector<Group> rowsB { { "BODY", { &bodyTone, &subLevel, &startPhase } },
+    const std::vector<Group> rowsB { { "BODY", { &bodyTone, &subLevel, &startPhase, &weight } },
                                      { "DRIVE", { &driveEnv, &velDrive, &modDrive } },
                                      { "LEVEL", { &velSens } } };
     const int rowH = grid.getHeight() / 2;

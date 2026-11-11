@@ -15,6 +15,8 @@ of its genre that is at least as noisy as the genre's 25th percentile.
 Env: PK_TESTS (render server), PK_REFS (default kick_features_v2.pkl), FIT_ITERS (120), FIT_POLISH (1),
 FIT_WORKERS (9), PK_NUMPY_PATH,
   PK_START=FIT.json   start from (and keep the reference of) an earlier fit of the same presets;
+  PK_POWER=1          low end, attack and noisy mids at least as in the preset's own reference (see _power)
+  PK_LABEL=text       the note written after "fit ... to ..." by apply
   PK_GENRE_LIMITS=1   penalise mids more tonal than 90 % of the genre's references (60..140 ms) or ringing more
                       than 95 % of them (bands from ~350 Hz, 45..140 ms), with 1 dB to spare."""
 import json, os, re, sys, time
@@ -42,7 +44,7 @@ def library():
         m = ROW.match(line.rstrip("\n"))
         if m:
             vals = [float(v.rstrip("f")) for v in m.group(6).split(",")]
-            out.append({"name": m.group(2), "cat": m.group(4), "params": dict(zip(ORDER, vals)), "group": m.group(7),
+            out.append({"name": m.group(2), "cat": m.group(4), "params": {"weight": 0.0, **dict(zip(ORDER, vals))}, "group": m.group(7),
                         "target": m.group(9)})
     return out
 
@@ -61,6 +63,24 @@ def _genre_limited(t10, g95):
     fk.distance = distance
 
 
+def _power():
+    """PK_POWER=1 (2026-11-12, Roman: half of the kicks ring like a synth, have a weak low end or a limp attack):
+    one-sided penalties against the preset's own reference - low end 35..112 Hz over 45..400 ms, attack
+    1.1..11 kHz in the first 12 ms and the noisiness of the mids 60..140 ms may not fall short by more than 1 dB."""
+    dist = fk.distance
+    low = lambda f: float(np.mean(f["spec"][2:4, 1:3]))
+    att = lambda f: float(np.mean(f["spec"][0, 7:11]))
+    def distance(a, b, detail=False):
+        res = dist(a, b, detail)
+        pen = (1.5 * max(0.0, low(b) - low(a) - 1.0) + 1.0 * max(0.0, att(b) - att(a) - 1.0)
+               + 1.5 * max(0.0, float(b["tonal"][1] - a["tonal"][1]) - 1.0))
+        if detail:
+            c, parts = res
+            return c + pen, {**parts, "power": pen}
+        return res + pen
+    fk.distance = distance
+
+
 def genre_limits(refs, cat):
     from kick_features import BAND_EDGES
     hi = BAND_EDGES[:-1] >= 300
@@ -72,6 +92,8 @@ def work(job):
     name, target, start, others, seed, iters, limits = job
     if limits:
         _genre_limited(*limits)
+    if os.environ.get("PK_POWER"):
+        _power()
     # The note in the name stays: TUNE within its semitone (TUNE 0 = A1); this worker runs one job at a time.
     note = re.search(r" ([A-G]#?)(\d)(?: \S+)?$", name) if GENERATED.match(name) else None
     if note:
@@ -186,13 +208,14 @@ def apply(fit_path):
         m = ROW.match(line.rstrip("\n"))
         if m and m.group(2) in fits:
             f = fits[m.group(2)]
-            p = {**dict(zip(ORDER, [float(v.rstrip("f")) for v in m.group(6).split(",")])), **f["params"]}
+            p = {"weight": 0.0, **dict(zip(ORDER, [float(v.rstrip("f")) for v in m.group(6).split(",")])), **f["params"]}
             vals = ", ".join(lit(k, p[k]) for k in ORDER)
             nm = names[m.group(2)]
             pad = " " * max(1, len(m.group(2)) + len(m.group(3)) - len(nm))
             was = "" if nm == m.group(2) else ", was %s" % m.group(2)
-            line = '%s{ "%s",%s"%s",%s{ %s }, "%s" }, // fit %.1f to %s (refit with tonality 2026-10-23%s)\n' % (
-                m.group(1), nm, pad, m.group(4), m.group(5), vals, m.group(7), f["distance"], f["target"], was)
+            line = '%s{ "%s",%s"%s",%s{ %s }, "%s" }, // fit %.1f to %s (%s%s)\n' % (
+                m.group(1), nm, pad, m.group(4), m.group(5), vals, m.group(7), f["distance"], f["target"],
+                os.environ.get("PK_LABEL", "refit with tonality 2026-10-23"), was)
             n += 1
         lines.append(line)
     open(SRC, "w", encoding="utf-8").write("".join(lines))

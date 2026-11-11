@@ -37,6 +37,7 @@ namespace id
     inline constexpr const char* beatLength = "beatLength";
     inline constexpr const char* subLevel   = "subLevel";
     inline constexpr const char* startPhase = "startPhase";
+    inline constexpr const char* weight     = "weight";
     inline constexpr const char* driveEnv   = "driveEnv";
     inline constexpr const char* velDrive   = "velDrive";
     inline constexpr const char* oversample = "oversample";
@@ -83,6 +84,7 @@ struct KickParams
     int beatLength = 0;         // 0 off, 1 = 1/4, 2 = 1/8, 3 = 1/16: the kick ends within that note value
     float subLevel = 0.0f;      // clean sine sub layer under the driven body
     float startPhase = 0.0f;    // 0..1 = 0..90 degrees body start phase ("push")
+    float weight = 0.0f;        // 0..1: 2nd harmonic of the body (measured kicks: -12..-25 dB in the tail; 0 = none, as before 1.2)
     float driveEnv = 0.0f;      // extra drive on the attack, up to +24 dB (decays over ~30 ms)
     float velDrive = 0.0f;      // velocity -> drive
     int oversampleIndex = 1;    // 0 = 2x, 1 = 4x, 2 = 8x
