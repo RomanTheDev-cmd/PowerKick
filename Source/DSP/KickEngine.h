@@ -40,6 +40,7 @@ public:
         hold = decaySec * (0.06 + 0.54 * body);
         curveShape = p.pitchCurve;
         subLevel = p.subLevel;
+        weight = juce::jlimit (0.0, 1.0, (double) p.weight);
         // High BODY holds the level and then stops, like measured hard-techno kicks
         // (tail only 1-2 dB under the hit); low BODY decays smoothly.
         curve = 0.35 + 3.65 * std::pow (1.0 - body, 1.4);
@@ -120,7 +121,12 @@ public:
         // ANALOGUE: an asymmetric body - 2nd harmonic (~-22 dB) on the saturated sine, peaks within ~1.3 dB; the DC
         // blocker after the drive removes the offset. (A biased tanh swelled the negative half.)
         const double sd = std::tanh (satGain * sn) * satNorm;
-        const double s = analogHit ? sd + 0.15 * sd * sd - 0.075 : sd;
+        double s = analogHit ? sd + 0.15 * sd * sd - 0.075 : sd;
+        // WEIGHT (1.2): the 2nd harmonic of the body, up to about -10 dB under the fundamental, the positive peak kept.
+        // Measured hard-techno kicks carry it at -12..-25 dB through the whole tail (it is the audible weight around
+        // 100 Hz); the symmetric saturation alone gives odd harmonics only - a hollow, synth-like tone.
+        if (weight > 0.0)
+            s = (s + weight * (1.1 * sd * sd - 0.55)) / (1.0 + 0.55 * weight);
 
         double a;
         if (t < hold)
@@ -192,7 +198,7 @@ private:
 
     double sr = 48000.0, t = 0.0, phase = 0.0;
     double f0 = 43.65, depth = 30.0, pitchTau = 0.03, fall = 0.0, fallTau = 0.1, punch = 0.5, body = 0.5;
-    double curveShape = 0.0, subLevel = 0.0;
+    double curveShape = 0.0, subLevel = 0.0, weight = 0.0;
     double decaySec = 0.4, hold = 0.05, curve = 2.0, satGain = 2.0, satNorm = 1.0, velGain = 1.0;
     ClickType clickType = ClickType::sharp;
     double clickTone = 0.5, clickGain = 0.0, clickTau = 0.002, blipFreq = 1000.0;

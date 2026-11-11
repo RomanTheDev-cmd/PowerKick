@@ -47,7 +47,7 @@ const juce::StringArray& allParamIds()
                                          id::driveMode, id::charMode, id::pitchDepth, id::pitchTime,
                                          id::clickType, id::clickTone, id::rumbleTime, id::rumbleSync,
                                          id::velSens, id::keyTrack, id::bodyTone, id::pitchFall, id::splitFreq,
-                                         id::beatLength, id::subLevel, id::startPhase, id::driveEnv, id::velDrive,
+                                         id::beatLength, id::subLevel, id::startPhase, id::weight, id::driveEnv, id::velDrive,
                                          id::oversample, id::pitchCurve, id::keyRoot, id::modDrive, id::choke, id::rumbleMode, id::analog };
     return ids;
 }
@@ -117,6 +117,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<APC> (juce::ParameterID { id::beatLength, 1 }, "Beat Length", juce::StringArray { "Off", "1/4", "1/8", "1/16" }, 0));
     layout.add (unit (id::subLevel, "Sub Layer", 0.0f));
     layout.add (unit (id::startPhase, "Start Phase", 0.0f));
+    layout.add (unit (id::weight, "Weight", 0.0f));
     layout.add (unit (id::driveEnv, "Drive Attack", 0.0f));
     layout.add (unit (id::velDrive, "Velocity Drive", 0.0f));
     layout.add (std::make_unique<APC> (juce::ParameterID { id::oversample, 1 }, "Oversampling", juce::StringArray { "2x", "4x", "8x" }, 1));
@@ -162,6 +163,7 @@ KickParams readParams (const juce::AudioProcessorValueTreeState& s)
     p.beatLength = juce::roundToInt (v (id::beatLength));
     p.subLevel = v (id::subLevel);
     p.startPhase = v (id::startPhase);
+    p.weight = v (id::weight);
     p.driveEnv = v (id::driveEnv);
     p.velDrive = v (id::velDrive);
     p.oversampleIndex = juce::roundToInt (v (id::oversample));

@@ -303,7 +303,7 @@ void testRetriggerPeaks()
 void testWholeChainHandoff()
 {
     // Probe before the emergency ceiling: clipping must not hide retained filter energy.
-    for (const char* name : { "Warm Click F#1 III", "Classic Punch" })
+    for (const char* name : { "Warm Rumble F#1 IV", "Classic Punch" })
     {
         auto p = preset (name); p.outputDb -= 24.0f;
         const int step = 1714, onset = step + 47; // 1 ms hand-off at 48 kHz
@@ -919,6 +919,32 @@ void testAdvancedFeatures()
       p.subLevel = 1.0f; const auto b = renderKick (p, 48000.0, 140.0, false);
       expect (segDb (b, 0.1, 0.3, 35, 80) - segDb (a, 0.1, 0.3, 35, 80) >= 3.0, "SUB LAYER adds clean low end (" + juce::String (segDb (b, 0.1, 0.3, 35, 80) - segDb (a, 0.1, 0.3, 35, 80), 2) + " dB)");
       expect (std::abs (segDb (b, 0.1, 0.3, 1000, 8000) - segDb (a, 0.1, 0.3, 1000, 8000)) < 1.0, "SUB LAYER leaves the top alone (" + juce::String (segDb (b, 0.1, 0.3, 1000, 8000) - segDb (a, 0.1, 0.3, 1000, 8000), 2) + " dB)"); }
+
+    // WEIGHT (1.2, 2026-11-12): the 2nd harmonic of the body. Measured kicks carry it at -12..-25 dB through the tail;
+    // without it the tail is a bare sine with odd harmonics only (Roman: "weak low end", "rings like a synth").
+    { auto p = base; p.tune = 0.0f; p.pitchFall = 0.0f; p.decay = 0.6f; p.body = 0.8f;
+      auto h2 = [] (const juce::AudioBuffer<float>& a)   // H2 - H1 of the settled tail (55 Hz), dB
+      {
+          auto tone = [&a] (double f)
+          {
+              double re = 0, im = 0; const int i0 = (int) (0.15 * 48000), i1 = std::min (a.getNumSamples(), (int) (0.30 * 48000));
+              for (int i = i0; i < i1; ++i)
+              {
+                  const double w = 0.5 - 0.5 * std::cos (2.0 * dsp::pi * (i - i0) / (i1 - i0 - 1));
+                  re += w * a.getSample (0, i) * std::cos (2.0 * dsp::pi * f * i / 48000.0); im += w * a.getSample (0, i) * std::sin (2.0 * dsp::pi * f * i / 48000.0);
+              }
+              return std::sqrt (re * re + im * im);
+          };
+          return db (tone (110.0) / tone (55.0));
+      };
+      const auto a = renderKick (p, 48000.0, 140.0, false);
+      p.weight = 1.0f; const auto b = renderKick (p, 48000.0, 140.0, false);
+      p.weight = 0.5f; const auto c = renderKick (p, 48000.0, 140.0, false);
+      expect (h2 (a) < -35.0, "without WEIGHT the tail has no 2nd harmonic (" + juce::String (h2 (a), 1) + " dB)");
+      expect (h2 (b) > -14.0 && h2 (b) < -6.0, "WEIGHT 100 %: 2nd harmonic about -10 dB under the fundamental (" + juce::String (h2 (b), 1) + " dB)");
+      expect (h2 (c) > h2 (a) + 10.0 && h2 (c) < h2 (b) - 3.0, "WEIGHT 50 % lies between (" + juce::String (h2 (c), 1) + " dB)");
+      expect (std::abs (db (b.getMagnitude (0, 0, b.getNumSamples())) - db (a.getMagnitude (0, 0, a.getNumSamples()))) < 1.5, "WEIGHT keeps the peak level within 1.5 dB (" + juce::String (db (b.getMagnitude (0, 0, b.getNumSamples())) - db (a.getMagnitude (0, 0, a.getNumSamples())), 2) + " dB)");
+      expect (std::abs (segDb (b, 0.1, 0.3, 35, 80) - segDb (a, 0.1, 0.3, 35, 80)) < 2.0, "WEIGHT keeps the fundamental within 2 dB (" + juce::String (segDb (b, 0.1, 0.3, 35, 80) - segDb (a, 0.1, 0.3, 35, 80), 2) + " dB)"); }
 
     // New click types are audible and different from each other.
     { auto p = clean; p.click = 0.0f; const auto none = renderKick (p, 48000.0, 140.0, false);

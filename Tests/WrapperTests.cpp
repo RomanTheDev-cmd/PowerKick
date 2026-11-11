@@ -279,7 +279,7 @@ void testFactoryPresetsLoadAsMeasured()
         near ("velSens", got.velSens, want.velSens); near ("keyTrack", got.keyTrack, want.keyTrack);
         near ("pitchFall", got.pitchFall, want.pitchFall); near ("bodyTone", got.bodyTone, want.bodyTone);
         near ("split", got.splitHz, want.splitHz); near ("beatLength", got.beatLength, want.beatLength);
-        near ("subLevel", got.subLevel, want.subLevel); near ("startPhase", got.startPhase, want.startPhase);
+        near ("subLevel", got.subLevel, want.subLevel); near ("startPhase", got.startPhase, want.startPhase); near ("weight", got.weight, want.weight);
         near ("driveEnv", got.driveEnv, want.driveEnv); near ("velDrive", got.velDrive, want.velDrive);
         near ("oversample", got.oversampleIndex, want.oversampleIndex); near ("pitchCurve", got.pitchCurve, want.pitchCurve);
         near ("keyRoot", got.keyRoot, want.keyRoot); near ("modDrive", got.modDrive, want.modDrive);

@@ -87,7 +87,7 @@ public:
 private:
     juce::AudioProcessorValueTreeState& state;
     Knob pitchDepth, pitchTime, pitchCurve, pitchFall, keyRoot, clickTone, rumbleTime;
-    Knob bodyTone, subLevel, startPhase, driveEnv, velDrive, modDrive, velSens;
+    Knob bodyTone, subLevel, startPhase, weight, driveEnv, velDrive, modDrive, velSens;
     Segment beatLength, rumbleMode, choke, oversample;
     juce::TextButton closeButton { "CLOSE" };
     struct Label { juce::String text; juce::Rectangle<int> area; };

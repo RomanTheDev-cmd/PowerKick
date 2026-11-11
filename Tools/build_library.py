@@ -18,7 +18,7 @@ import numpy as np
 
 ORDER = ["tune", "decay", "punch", "body", "click", "drive", "character", "rumble", "output", "width", "delay",
          "driveMode", "charMode", "pitchDepth", "pitchTime", "clickType", "clickTone", "rumbleTime", "rumbleSync",
-         "bodyTone", "pitchFall", "splitFreq"]
+         "bodyTone", "pitchFall", "splitFreq", "weight"]
 INT = {"driveMode", "charMode", "clickType", "rumbleSync"}
 CATS = ["Techno", "Hard Techno", "Schranz", "Industrial", "Rave / Hard Dance"]
 GROUPS = ["Short", "Long", "Rumble", "Wide", "Crushed", "Driven", "Clean"]
