@@ -1,0 +1,1202 @@
+[
+{
+"name": "Short Knock",
+"alias": -150.0
+},
+{
+"name": "Clipped Click G#1 V",
+"alias": -150.0
+},
+{
+"name": "Falling Thump",
+"alias": -132.07170215135795
+},
+{
+"name": "Warm Click F1 IV",
+"alias": -150.0
+},
+{
+"name": "Clean Clang F#1",
+"alias": -150.0
+},
+{
+"name": "Long Clip",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang G#1 III",
+"alias": -150.0
+},
+{
+"name": "Crushed Drop G1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Click B1",
+"alias": -150.0
+},
+{
+"name": "Clean Clang D1",
+"alias": -150.0
+},
+{
+"name": "Crushed Rumble G1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble A#1 II",
+"alias": -150.0
+},
+{
+"name": "Wide Driven Rumble G1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble G#1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble F#1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Rumble F1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang F#1 II",
+"alias": -150.0
+},
+{
+"name": "Wide Crushed Clang B1",
+"alias": -150.0
+},
+{
+"name": "Wide Warm Boom B1",
+"alias": -150.0
+},
+{
+"name": "Crushed Thump B1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang G1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Clang A#1 VIII",
+"alias": -150.0
+},
+{
+"name": "Driven Rumble G#1",
+"alias": -150.0
+},
+{
+"name": "Crushed Click A1",
+"alias": -150.0
+},
+{
+"name": "Driven Rumble A1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang B1 V",
+"alias": -150.0
+},
+{
+"name": "Warm Drop G#1 II",
+"alias": -107.10989605162375
+},
+{
+"name": "Crushed Clang F1",
+"alias": -117.08779411922414
+},
+{
+"name": "Wide Iron Sub",
+"alias": -41.94092292005226
+},
+{
+"name": "Clipped Rumble C1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble F#1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang A1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Thump A1 II",
+"alias": -150.0
+},
+{
+"name": "Rawstyle Screech",
+"alias": -19.92003970767437
+},
+{
+"name": "Driven Clang F#1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang G1",
+"alias": -150.0
+},
+{
+"name": "Pitch Drop",
+"alias": -150.0
+},
+{
+"name": "Driven Clang D#1",
+"alias": -150.0
+},
+{
+"name": "Driven Knock F1",
+"alias": -150.0
+},
+{
+"name": "Sub Pressure",
+"alias": -150.0
+},
+{
+"name": "Clipped Punch B1",
+"alias": -150.0
+},
+{
+"name": "Wide Warm Rumble E1",
+"alias": -150.0
+},
+{
+"name": "Driven Click B1 II",
+"alias": -150.0
+},
+{
+"name": "Wide Warm Rumble D#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang F#1 IV",
+"alias": -150.0
+},
+{
+"name": "Deep Drop",
+"alias": -150.0
+},
+{
+"name": "Clipped Drop D#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble G1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble G1 V",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble F#1 III",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang G1 VI",
+"alias": -150.0
+},
+{
+"name": "Wide Driven Clang A1",
+"alias": -150.0
+},
+{
+"name": "Wide Driven Clang C2 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang B1 III",
+"alias": -150.0
+},
+{
+"name": "Driven Click G1 V",
+"alias": -135.43751461275437
+},
+{
+"name": "Clipped Click A#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble A1 III",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble A#1 III",
+"alias": -150.0
+},
+{
+"name": "Wide Warm Clang A#1 III",
+"alias": -150.0
+},
+{
+"name": "Driven Clang B1 VI",
+"alias": -150.0
+},
+{
+"name": "Clipped Drop B1",
+"alias": -150.0
+},
+{
+"name": "Wide Crushed Clang F1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble D#1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble G#1 IV",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble A#1 III",
+"alias": -150.0
+},
+{
+"name": "Wide Crushed Boom A1",
+"alias": -150.0
+},
+{
+"name": "Clipped Click A#1 III",
+"alias": -150.0
+},
+{
+"name": "Gabba Lite",
+"alias": -150.0
+},
+{
+"name": "Driven Click G#1 III",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang F#1 III",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang D#1",
+"alias": -150.0
+},
+{
+"name": "Warm Thump F1",
+"alias": -150.0
+},
+{
+"name": "Driven Click G1 II",
+"alias": -150.0
+},
+{
+"name": "Clean Drop A#1",
+"alias": -150.0
+},
+{
+"name": "Warm Thump G#1",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Drop F#1",
+"alias": -150.0
+},
+{
+"name": "Driven Click E1",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Drop F1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang G1 V",
+"alias": -150.0
+},
+{
+"name": "Falling Clipper",
+"alias": -150.0
+},
+{
+"name": "Driven Clang G1 III",
+"alias": -106.72010205619907
+},
+{
+"name": "Warm Rumble G1 IV",
+"alias": -150.0
+},
+{
+"name": "Driven Thump A#1",
+"alias": -149.9587995272947
+},
+{
+"name": "Crushed Drop F#1",
+"alias": -150.0
+},
+{
+"name": "Classic Schranz",
+"alias": -150.0
+},
+{
+"name": "Driven Click A1",
+"alias": -117.71869272572887
+},
+{
+"name": "Schranz Metal",
+"alias": -150.0
+},
+{
+"name": "Grinding Rumble F#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang C2",
+"alias": -150.0
+},
+{
+"name": "Driven Clang B1 III",
+"alias": -150.0
+},
+{
+"name": "Driven Clang B1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang A#1 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang B1 V",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble C2",
+"alias": -150.0
+},
+{
+"name": "Crushed Rumble G1 II",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Clang F#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang B1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang F#1 V",
+"alias": -150.0
+},
+{
+"name": "Crushed Rumble A1",
+"alias": -150.0
+},
+{
+"name": "Wide Warm Boom A#1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Rumble F1 III",
+"alias": -150.0
+},
+{
+"name": "Euphoric Punch",
+"alias": -132.6687627702319
+},
+{
+"name": "Clipped Clang A1 II",
+"alias": -150.0
+},
+{
+"name": "Clean Clang G1 IV",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang F1 II",
+"alias": -50.93067702963043
+},
+{
+"name": "Wide Warm Thump A#1",
+"alias": -150.0
+},
+{
+"name": "Driven Clang G1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Knock F1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Thump G1 II",
+"alias": -150.0
+},
+{
+"name": "Rumble Tail",
+"alias": -150.0
+},
+{
+"name": "Wide Crushed Rumble E1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang G1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang A1 IV",
+"alias": -150.0
+},
+{
+"name": "Wide Warm Rumble F1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble F1",
+"alias": -150.0
+},
+{
+"name": "Warm Knock G#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Click F#1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble F#1 IV",
+"alias": -150.0
+},
+{
+"name": "Clipped Punch C2",
+"alias": -150.0
+},
+{
+"name": "Clean Clang A#1",
+"alias": -150.0
+},
+{
+"name": "Schranz Pressure",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang G#1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Click G1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Drop B1",
+"alias": -150.0
+},
+{
+"name": "Schranz Wide Tick",
+"alias": -150.0
+},
+{
+"name": "Driven Rumble G#1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Click B1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Clang A#1 VI",
+"alias": -150.0
+},
+{
+"name": "Crushed Rumble G1 III",
+"alias": -106.45696036822159
+},
+{
+"name": "Clipped Rumble G1 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble F#1 IV",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble F1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble G1 III",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang B1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang E1",
+"alias": -150.0
+},
+{
+"name": "Driven Knock D#1",
+"alias": -150.0
+},
+{
+"name": "Wide Grinding Rumble A1",
+"alias": -150.0
+},
+{
+"name": "Driven Clang G#1",
+"alias": -150.0
+},
+{
+"name": "Warm Click F#1 VI",
+"alias": -42.866711268922415
+},
+{
+"name": "Warm Click F1 V",
+"alias": -52.940657946783965
+},
+{
+"name": "Crushed Click G#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Drop G1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble A#1",
+"alias": -150.0
+},
+{
+"name": "Clean Rumble E1",
+"alias": -150.0
+},
+{
+"name": "Warm Punch F#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble D#1",
+"alias": -150.0
+},
+{
+"name": "Driven Clang A#1 III",
+"alias": -150.0
+},
+{
+"name": "Warm Thump F#1 III",
+"alias": -150.0
+},
+{
+"name": "Warm Click D1",
+"alias": -150.0
+},
+{
+"name": "Warm Click E1",
+"alias": -134.8152333655538
+},
+{
+"name": "Warm Drop F1",
+"alias": -58.48174693873595
+},
+{
+"name": "Clipped Rumble A#1 IV",
+"alias": -150.0
+},
+{
+"name": "Wide Grinding Knock F1",
+"alias": -150.0
+},
+{
+"name": "Wide Hammer",
+"alias": -150.0
+},
+{
+"name": "Warm Clang A1 V",
+"alias": -150.0
+},
+{
+"name": "Driven Clang C2 V",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble G#1 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang B1 III",
+"alias": -150.0
+},
+{
+"name": "Driven Clang A1 III",
+"alias": -103.60566679275959
+},
+{
+"name": "Driven Clang B1 V",
+"alias": -150.0
+},
+{
+"name": "Wide Crushed Rumble G#1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble G1 VI",
+"alias": -150.0
+},
+{
+"name": "Warm Click D#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble B1 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble F#1 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble C#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang F#1 VI",
+"alias": -150.0
+},
+{
+"name": "Warm Thump F#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang A1 III",
+"alias": -150.0
+},
+{
+"name": "Warm Thump F#1 II",
+"alias": -114.3373274550301
+},
+{
+"name": "Warm Click A1",
+"alias": -117.4060137742718
+},
+{
+"name": "Clean Knock C2",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Knock G1",
+"alias": -150.0
+},
+{
+"name": "Clipped Click G#1 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Click G1 IV",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble B1 III",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Boom B1",
+"alias": -150.0
+},
+{
+"name": "Hard Techno Core",
+"alias": -150.0
+},
+{
+"name": "Grinding Click A1",
+"alias": -150.0
+},
+{
+"name": "Warm Knock G1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble G#1",
+"alias": -48.342900595420055
+},
+{
+"name": "Warm Rumble F1 III",
+"alias": -130.36456038777484
+},
+{
+"name": "Clipped Rumble G#1",
+"alias": -150.0
+},
+{
+"name": "Driven Clang A#1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Thump B1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Knock G1",
+"alias": -150.0
+},
+{
+"name": "Driven Boom A1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang B1 13",
+"alias": -150.0
+},
+{
+"name": "Driven Clang C2 VI",
+"alias": -150.0
+},
+{
+"name": "Driven Click A#1",
+"alias": -116.08130010623007
+},
+{
+"name": "Clipped Clang A#1",
+"alias": -150.0
+},
+{
+"name": "Driven Clang B1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Clang B1",
+"alias": -150.0
+},
+{
+"name": "Driven Clang A1 VII",
+"alias": -102.45722082573829
+},
+{
+"name": "Clipped Clang B1 IV",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble F#1 VI",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble A#1 V",
+"alias": -150.0
+},
+{
+"name": "Crushed Rumble F1 II",
+"alias": -150.0
+},
+{
+"name": "Clean Rumble G1",
+"alias": -150.0
+},
+{
+"name": "Clipped Click F1",
+"alias": -150.0
+},
+{
+"name": "Clean Rumble F#1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Click F1",
+"alias": -150.0
+},
+{
+"name": "Raw Thud",
+"alias": -150.0
+},
+{
+"name": "Classic Punch",
+"alias": -150.0
+},
+{
+"name": "Crushed Knock F1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang A1 IV",
+"alias": -150.0
+},
+{
+"name": "Wide Clean Rumble G1",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Rumble B1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble D#1",
+"alias": -150.0
+},
+{
+"name": "Wide Crushed Boom A#1",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Rumble G#1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang D1",
+"alias": -150.0
+},
+{
+"name": "Warm Drop G1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Click A#1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble A1 III",
+"alias": -150.0
+},
+{
+"name": "Wide Crushed Drop F#1",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang G#1",
+"alias": -33.83663851736651
+},
+{
+"name": "Driven Clang B1 IV",
+"alias": -150.0
+},
+{
+"name": "Driven Drop A1",
+"alias": -150.0
+},
+{
+"name": "Wide Driven Clang C2",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Clang B1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang B1 14",
+"alias": -150.0
+},
+{
+"name": "Driven Clang C2 III",
+"alias": -150.0
+},
+{
+"name": "Driven Clang F1 II",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Clang B1 III",
+"alias": -150.0
+},
+{
+"name": "Clipped Click G#1 III",
+"alias": -150.0
+},
+{
+"name": "Grinding Rumble F1",
+"alias": -89.54659709497547
+},
+{
+"name": "Distorted Factory",
+"alias": -150.0
+},
+{
+"name": "Driven Click A#1 II",
+"alias": -34.64321631134339
+},
+{
+"name": "Crushed Rumble F1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble A#1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Click C#1",
+"alias": -150.0
+},
+{
+"name": "Crushed Drop G1",
+"alias": -150.0
+},
+{
+"name": "Driven Rumble F1",
+"alias": -138.39550104935674
+},
+{
+"name": "Warm Clang C#1",
+"alias": -105.75829397876035
+},
+{
+"name": "Crushed Clang A#1",
+"alias": -150.0
+},
+{
+"name": "Ticking Body",
+"alias": -150.0
+},
+{
+"name": "Warm Clang F1 III",
+"alias": -129.38303306370946
+},
+{
+"name": "Wide Warm Click F#1 II",
+"alias": -48.648950755122016
+},
+{
+"name": "Grinding Click G#1",
+"alias": -115.72679754842268
+},
+{
+"name": "Grinding Drop F#1",
+"alias": -114.68556649019007
+},
+{
+"name": "Clipped Rumble A1",
+"alias": -107.6278184019036
+},
+{
+"name": "Crushed Knock G1",
+"alias": -150.0
+},
+{
+"name": "Clipped Boom G#1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Click F#1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Click G1 III",
+"alias": -150.0
+},
+{
+"name": "Warm Click B1",
+"alias": -53.967275214857
+},
+{
+"name": "Warm Clang G#1 V",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble A1",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang G#1 II",
+"alias": -150.0
+},
+{
+"name": "Schranz Air",
+"alias": -150.0
+},
+{
+"name": "Wide Driven Clang F1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang C2 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Drop D1",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang C2 III",
+"alias": -150.0
+},
+{
+"name": "Driven Clang A1",
+"alias": -150.0
+},
+{
+"name": "Crushed Click F1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang A#1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Clang A#1 IV",
+"alias": -150.0
+},
+{
+"name": "Driven Clang A#1 VII",
+"alias": -105.87497468830863
+},
+{
+"name": "Warm Click A#1 II",
+"alias": -150.0
+},
+{
+"name": "Industrial Rumble",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble B1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble F#1 III",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble G1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Click G1",
+"alias": -150.0
+},
+{
+"name": "Clean Rumble F#1",
+"alias": -150.0
+},
+{
+"name": "Warm Click D#1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang F#1",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble A1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Knock F1",
+"alias": -150.0
+},
+{
+"name": "Driven Clang F#1",
+"alias": -150.0
+},
+{
+"name": "Grinding Boom G1",
+"alias": -150.0
+},
+{
+"name": "Warm Drop G1",
+"alias": -150.0
+},
+{
+"name": "Driven Rumble A#1",
+"alias": -138.36099200706676
+},
+{
+"name": "Crushed Clang B1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Rumble F1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Thump A1",
+"alias": -150.0
+},
+{
+"name": "Clipped Rumble F#1 V",
+"alias": -150.0
+},
+{
+"name": "Driven Click G1 IV",
+"alias": -150.0
+},
+{
+"name": "Driven Rumble D#1",
+"alias": -150.0
+},
+{
+"name": "Driven Drop F1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang F#1 V",
+"alias": -39.74599686236432
+},
+{
+"name": "Warm Drop A#1",
+"alias": -150.0
+},
+{
+"name": "Wide Clipped Clang B1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Click G#1",
+"alias": -150.0
+},
+{
+"name": "Crushed Clang F1 II",
+"alias": -150.0
+},
+{
+"name": "Clipped Clang B1 II",
+"alias": -150.0
+},
+{
+"name": "Driven Click F1 III",
+"alias": -150.0
+},
+{
+"name": "Driven Clang G#1 IV",
+"alias": -150.0
+},
+{
+"name": "Wide Grinding Rumble A#1",
+"alias": -150.0
+},
+{
+"name": "Warm Clang B1 VIII",
+"alias": -150.0
+},
+{
+"name": "Warm Drop A#1 II",
+"alias": -150.0
+},
+{
+"name": "Crushed Click A#1",
+"alias": -150.0
+},
+{
+"name": "Steel Press",
+"alias": -25.599316727551376
+},
+{
+"name": "Warm Rumble G1",
+"alias": -37.27812365895518
+},
+{
+"name": "Clipped Rumble A1 II",
+"alias": -150.0
+},
+{
+"name": "Clean Rumble G1 II",
+"alias": -150.0
+},
+{
+"name": "Warm Click F1",
+"alias": -150.0
+},
+{
+"name": "Hardstyle Tok",
+"alias": -56.49890529015339
+}
+]

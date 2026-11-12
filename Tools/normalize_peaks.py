@@ -53,7 +53,9 @@ for name, cat, v in load_presets():
         cases += [({"_step": step, "_bpm": 150}, 2.0), ({"_step": step, "_bpm": 150, "_vel": 0.8, "_alt": 1}, 2.0)]
     # Four on the floor and 8ths: the tail of a hit is still there when the next one comes, which a single hit
     # and the cut-off rolls do not show (up to +1.3 dB higher; found by the independent audit, 2026-10-24).
-    for step, bpm in ((22154, 130), (19200, 150), (16941, 170), (9600, 150)):
+    # 1.3 (2026-11-12): also 120 and 140 BPM - a rumble follows the tempo, and the audit (no tempo from its host) found one
+    # rumble at +0.29 dBTP at a tempo the level was not set on.
+    for step, bpm in ((24000, 120), (20571, 140), (22154, 130), (19200, 150), (16941, 170), (9600, 150)):
         cases.append(({"_step": step, "_bpm": bpm}, 2.0))
     pk = max(20 * np.log10(true_peak(render_len(probe, extra, length))) for extra, length in cases) + 24.0
     worst = max(worst, abs(pk + 1.0))

@@ -16,7 +16,7 @@ import numpy as np
 from kick_features import features, distance
 
 TESTS = os.environ.get("PK_TESTS", os.path.expanduser("~/Library/Caches/PowerKickBuild/powerkick_tests_artefacts/Release/powerkick_tests"))
-SR, LEN, BPM = 48000, 0.6, 145
+SR, LEN, BPM = 48000, float(os.environ.get("PK_LEN", 0.6)), 145   # PK_LEN=0.85 renders the rumble's tail (1.3)
 FIT_OUTPUT = -12.0     # fixed during fitting: density must come from synthesis, never from output clipping
 TARGET_PEAK = -1.0     # presets ship with ~1 dB headroom for the mix
 
