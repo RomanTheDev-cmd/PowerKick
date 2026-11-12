@@ -111,11 +111,16 @@ def features(x, sr):
     for lo, hi in STEREO_BANDS:
         m = (f >= lo) & (f < hi)
         st.append(np.clip(10 * np.log10((np.sum(np.abs(S[m]) ** 2) + 1e-30) / (np.sum(np.abs(M[m]) ** 2) + 1e-30)), -40, 0))
+    # 1.3 (2026-11-12): the rumble's tail, 400..800 ms (the segments above end at 400 ms, so a fit never saw it).
+    # A shorter signal is silence there (the floor).
+    t0, t1 = int(0.40 * sr), int(0.80 * sr)
+    tail_seg = np.pad(mono[t0:t1], (0, max(0, (t1 - t0) - len(mono[t0:t1]))))
+    tail = np.maximum(_band_levels(tail_seg, sr) - peak_db, FLOOR)
     return {"env": env, "f0": _f0_track(mono, sr), "spec": spec, "side": np.array(st), "peak_db": peak_db,
-            "tonal": _tonal(mono, sr)}
+            "tonal": _tonal(mono, sr), "tail": tail}
 
 
-WEIGHTS = {"env": 1.0, "f0": 1.5, "spec": 1.0, "side": 0.15, "tonal": 1.5}
+WEIGHTS = {"env": 1.0, "f0": 1.5, "spec": 1.0, "side": 0.15, "tonal": 1.5, "tail": 0.6}
 
 
 def _resolvable():
@@ -141,5 +146,7 @@ def distance(a, b, detail=False):
     parts = {"env": d_env, "f0": d_f0, "spec": d_spec, "side": d_side}
     if "tonal" in a and "tonal" in b:  # older feature files have no tonality
         parts["tonal"] = float(np.mean(np.abs(a["tonal"] - b["tonal"])))
+    if "tail" in a and "tail" in b:  # 1.3: the low bands of the tail (20..356 Hz), where the rumble lives
+        parts["tail"] = float(np.mean(np.abs(a["tail"][:5] - b["tail"][:5])))
     total = sum(WEIGHTS[k] * v for k, v in parts.items())
     return (total, parts) if detail else total

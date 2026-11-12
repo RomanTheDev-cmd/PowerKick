@@ -266,7 +266,8 @@ void testRetriggerPeaks()
         double loudest = 0.0;
         // 16ths and 32nds (also accented), and since 2026-10-24 four on the floor at 130 / 150 / 170 BPM and 8ths:
         // there the tail of a hit is still sounding when the next one comes.
-        for (auto [step, bpm] : { std::pair { 4800, 150.0 }, std::pair { 2400, 150.0 }, std::pair { 22154, 130.0 },
+        // 1.3: also 120 and 140 BPM (a rumble follows the tempo)
+        for (auto [step, bpm] : { std::pair { 4800, 150.0 }, std::pair { 2400, 150.0 }, std::pair { 24000, 120.0 }, std::pair { 20571, 140.0 }, std::pair { 22154, 130.0 },
                                   std::pair { 19200, 150.0 }, std::pair { 16941, 170.0 }, std::pair { 9600, 150.0 } })
         {
             const double pk = step < 9600 ? std::max (retriggerPeak (p, step, bpm), retriggerPeak (p, step, bpm, true))
@@ -860,8 +861,8 @@ const Fingerprint fingerprints[] = {
 { "Hard Techno Core", 23520, 7543.6451168423609, 0.756459057, -0.508711815 },
 { "Classic Punch", 35265, 4643.5606063465666, 0.864766657, 0.413602620 },
 { "Classic Schranz", 21467, 4271.6214034582272, -0.152239025, 0.232373416 }, // OUTPUT -1.9 -> -2.8 dB (true-peak level with 4/4 and 8ths, 2026-10-24): gain only
-{ "Industrial Rumble", 34425, 6680.8119497012085, -0.560978234, 0.513331771 },
-{ "Gabba Lite", 25277, 4730.7759797020726, -0.365139157, 0.425546676 }, // OUTPUT -0.8 -> -2.1 dB (true-peak level with 4/4 and 8ths, 2026-10-24): gain only
+{ "Industrial Rumble", 34417, 6380.1258135176386, -0.548208833, 0.501646936 }, // OUTPUT -1.5 -> -1.7 dB (level also at 120 and 140 BPM, 2026-11-12): gain only (energy x 0.9550, samples x 0.9772)
+{ "Gabba Lite", 25211, 3845.3189978717087, -0.329198897, 0.383660614 }, // OUTPUT -0.8 -> -2.1 dB (2026-10-24), -2.1 -> -3.0 dB (level also at 120 and 140 BPM, 2026-11-12): gain only (energy x 0.8128, samples x 0.9016)
 };
 
 void testExistingSoundUnchanged()
